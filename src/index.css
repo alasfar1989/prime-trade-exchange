@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0f7ff;
+  --color-brand-100: #e0efff;
+  --color-brand-200: #b8dbff;
+  --color-brand-300: #7abfff;
+  --color-brand-400: #3a9eff;
+  --color-brand-500: #0a7aef;
+  --color-brand-600: #0062cc;
+  --color-brand-700: #004fa6;
+  --color-brand-800: #003d80;
+  --color-brand-900: #0a2540;
+  --color-brand-950: #061729;
+
+  --color-surface-0: #ffffff;
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+
+  --color-status-green: #16a34a;
+  --color-status-yellow: #ca8a04;
+  --color-status-red: #dc2626;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+
+  --radius-card: 0.75rem;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--color-surface-50);
+  color: var(--color-brand-900);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
