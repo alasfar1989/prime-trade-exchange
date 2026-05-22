@@ -1,10 +1,8 @@
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Load .env from project root (parent of server/)
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+// In production (Railway), env vars are injected. Locally, load from .env
+dotenv.config();  // looks for .env in cwd
+dotenv.config({ path: '../.env' }); // also try parent (project root)
 
 function required(key: string): string {
   const val = process.env[key];
