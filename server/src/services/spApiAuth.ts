@@ -12,20 +12,28 @@ export async function getAccessToken(): Promise<string> {
     return cachedToken;
   }
 
-  const res = await axios.post(TOKEN_URL, new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: env.SP_API.REFRESH_TOKEN,
-    client_id: env.SP_API.CLIENT_ID,
-    client_secret: env.SP_API.CLIENT_SECRET,
-  }), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
+  try {
+    const res = await axios.post(TOKEN_URL, new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: env.SP_API.REFRESH_TOKEN,
+      client_id: env.SP_API.CLIENT_ID,
+      client_secret: env.SP_API.CLIENT_SECRET,
+    }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
 
-  cachedToken = res.data.access_token;
-  expiresAt = Date.now() + res.data.expires_in * 1000;
+    cachedToken = res.data.access_token;
+    expiresAt = Date.now() + res.data.expires_in * 1000;
 
-  console.log('SP-API access token refreshed, expires in', res.data.expires_in, 'seconds');
-  return cachedToken!;
+    console.log('SP-API access token refreshed, expires in', res.data.expires_in, 'seconds');
+    return cachedToken!;
+  } catch (err: any) {
+    const errData = err.response?.data || err.message;
+    console.error('SP-API token exchange failed:', JSON.stringify(errData));
+    console.error('Client ID prefix:', env.SP_API.CLIENT_ID.substring(0, 30) + '...');
+    console.error('Refresh token prefix:', env.SP_API.REFRESH_TOKEN.substring(0, 20) + '...');
+    throw err;
+  }
 }
 
 export function isTokenValid(): boolean {
