@@ -15,20 +15,24 @@ router.get('/health', (_req, res) => {
 });
 
 router.get('/debug-auth', async (_req, res) => {
+  const rt = env.SP_API.REFRESH_TOKEN;
+  const cs = env.SP_API.CLIENT_SECRET;
+  const charCodes = Array.from(rt.substring(0, 10)).map(c => c.charCodeAt(0));
   try {
     const token = await getAccessToken();
     res.json({
       status: 'success',
       tokenPrefix: token.substring(0, 20) + '...',
-      clientIdPrefix: env.SP_API.CLIENT_ID.substring(0, 30) + '...',
-      refreshTokenPrefix: env.SP_API.REFRESH_TOKEN.substring(0, 20) + '...',
     });
   } catch (err: any) {
     res.json({
       status: 'error',
       error: err.response?.data || err.message,
-      clientIdPrefix: env.SP_API.CLIENT_ID.substring(0, 30) + '...',
-      refreshTokenPrefix: env.SP_API.REFRESH_TOKEN.substring(0, 20) + '...',
+      refreshTokenFirst10Chars: rt.substring(0, 10),
+      refreshTokenCharCodes: charCodes,
+      refreshTokenLength: rt.length,
+      clientSecretLast10: cs.substring(cs.length - 10),
+      clientSecretLength: cs.length,
     });
   }
 });
