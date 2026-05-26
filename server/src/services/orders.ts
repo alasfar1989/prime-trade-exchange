@@ -33,27 +33,38 @@ export interface Order {
 export async function fetchOrders(daysBack = 30): Promise<Order[]> {
   const createdAfter = format(subDays(new Date(), daysBack), "yyyy-MM-dd'T'HH:mm:ss'Z'");
 
-  const res = await spApiGet<{ payload: { Orders: SpOrder[] } }>(
-    '/orders/v0/orders',
-    {
-      MarketplaceIds: env.SP_API.MARKETPLACE_ID,
-      CreatedAfter: createdAfter,
-    }
-  );
+  const allOrders: SpOrder[] = [];
+  let nextToken: string | undefined;
 
-  const orders = res.payload?.Orders || [];
+  // Paginate through all orders
+  do {
+    const params: Record<string, string> = nextToken
+      ? { NextToken: nextToken }
+      : { MarketplaceIds: env.SP_API.MARKETPLACE_ID, CreatedAfter: createdAfter };
 
-  return orders.map((o) => ({
-    orderId: o.AmazonOrderId,
-    purchaseDate: o.PurchaseDate,
-    lastUpdateDate: o.LastUpdateDate,
-    status: o.OrderStatus,
-    totalAmount: o.OrderTotal ? parseFloat(o.OrderTotal.Amount) : 0,
-    currency: o.OrderTotal?.CurrencyCode || 'USD',
-    itemsShipped: o.NumberOfItemsShipped || 0,
-    itemsUnshipped: o.NumberOfItemsUnshipped || 0,
-    fulfillmentChannel: o.FulfillmentChannel || '',
-    shipCity: o.ShippingAddress?.City || '',
-    shipState: o.ShippingAddress?.StateOrRegion || '',
-  }));
+    const res = await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
+      '/orders/v0/orders',
+      params
+    );
+
+    allOrders.push(...(res.payload?.Orders || []));
+    nextToken = res.payload?.NextToken;
+  } while (nextToken);
+
+  // Sort newest first
+  return allOrders
+    .map((o) => ({
+      orderId: o.AmazonOrderId,
+      purchaseDate: o.PurchaseDate,
+      lastUpdateDate: o.LastUpdateDate,
+      status: o.OrderStatus,
+      totalAmount: o.OrderTotal ? parseFloat(o.OrderTotal.Amount) : 0,
+      currency: o.OrderTotal?.CurrencyCode || 'USD',
+      itemsShipped: o.NumberOfItemsShipped || 0,
+      itemsUnshipped: o.NumberOfItemsUnshipped || 0,
+      fulfillmentChannel: o.FulfillmentChannel || '',
+      shipCity: o.ShippingAddress?.City || '',
+      shipState: o.ShippingAddress?.StateOrRegion || '',
+    }))
+    .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
 }

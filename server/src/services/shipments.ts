@@ -84,5 +84,6 @@ export async function fetchShipments(statuses?: string[]): Promise<Shipment[]> {
     });
   }
 
-  return shipments;
+  // Sort newest first by shipment name date
+  return shipments.reverse();
 }
