@@ -59,14 +59,15 @@ export async function fetchShipments(statuses?: string[]): Promise<Shipment[]> {
 
     try {
       const items = await spApiGet<{ payload: { ItemData: SpShipmentItem[] } }>(
-        `/fba/inbound/v0/shipments/${sp.ShipmentId}/shipmentItems`
+        `/fba/inbound/v0/shipments/${sp.ShipmentId}/items`,
+        { MarketplaceId: env.SP_API.MARKETPLACE_ID }
       );
       const itemData = items.payload?.ItemData || [];
       skuCount = itemData.length;
       expectedUnits = itemData.reduce((sum, i) => sum + (i.QuantityShipped || 0), 0);
       locatedUnits = itemData.reduce((sum, i) => sum + (i.QuantityReceived || 0), 0);
-    } catch (err) {
-      console.error(`Failed to fetch items for ${sp.ShipmentId}:`, (err as Error).message);
+    } catch (err: any) {
+      console.error(`Failed to fetch items for ${sp.ShipmentId}:`, err.response?.data || err.message);
     }
 
     shipments.push({
