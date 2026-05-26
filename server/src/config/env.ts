@@ -10,13 +10,21 @@ function required(key: string): string {
   return val;
 }
 
+// Railway mangles env vars containing pipe (|) characters.
+// If SP_API_REFRESH_TOKEN_B64 is set, decode it instead.
+function getRefreshToken(): string {
+  const b64 = process.env.SP_API_REFRESH_TOKEN_B64;
+  if (b64) return Buffer.from(b64, 'base64').toString('utf-8');
+  return required('SP_API_REFRESH_TOKEN');
+}
+
 export const env = {
   PORT: parseInt(process.env.PORT || '3001'),
   API_KEY: process.env.API_KEY || '',
   SP_API: {
     CLIENT_ID: required('SP_API_CLIENT_ID'),
     CLIENT_SECRET: required('SP_API_CLIENT_SECRET'),
-    REFRESH_TOKEN: required('SP_API_REFRESH_TOKEN'),
+    REFRESH_TOKEN: getRefreshToken(),
     MARKETPLACE_ID: required('SP_API_MARKETPLACE_ID'),
     SELLER_ID: required('SP_API_SELLER_ID'),
   },
