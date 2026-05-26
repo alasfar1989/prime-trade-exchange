@@ -13,7 +13,19 @@ const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN }));
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests from the custom domain, Vercel previews, and no-origin (curl, etc.)
+    if (!origin
+      || origin === 'https://primetradeexchange.net'
+      || origin.endsWith('.vercel.app')
+      || origin === 'http://localhost:5173') {
+      callback(null, origin || '*');
+    } else {
+      callback(null, false);
+    }
+  },
+}));
 app.use(morgan('short'));
 app.use(express.json());
 
