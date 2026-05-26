@@ -47,7 +47,7 @@ export function ShippedTable({ shipments }: ShippedTableProps) {
                 <tr key={s.shipmentId} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
                   <td className="px-4 py-3">
                     <a
-                      href={`https://sellercentral.amazon.com/gp/fba/inbound-shipment/summary.html/ref=fba_iss?shipmentId=${s.shipmentId}`}
+                      href={`https://sellercentral.amazon.com/fba/inbound-queue/summary?shipmentId=${s.shipmentId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm font-medium text-brand-500 hover:text-brand-700 hover:underline"
