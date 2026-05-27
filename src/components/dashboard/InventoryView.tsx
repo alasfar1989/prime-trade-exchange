@@ -24,6 +24,8 @@ export function InventoryView() {
     );
   }
 
+  const sorted = [...inventory].sort((a, b) => b.totalQuantity - a.totalQuantity);
+
   const totalFulfillable = inventory.reduce((sum, i) => sum + i.fulfillable, 0);
   const totalInbound = inventory.reduce((sum, i) => sum + i.inboundShipped + i.inboundReceiving + i.inboundWorking, 0);
   const totalReserved = inventory.reduce((sum, i) => sum + i.reserved, 0);
@@ -79,7 +81,7 @@ export function InventoryView() {
               </tr>
             </thead>
             <tbody>
-              {inventory.map((item) => (
+              {sorted.map((item) => (
                 <tr key={item.fnSku} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
                   <td className="px-4 py-3 text-sm text-brand-900 max-w-[250px] truncate">{item.productName}</td>
                   <td className="px-4 py-3 text-sm font-mono text-slate-500">{item.asin}</td>
