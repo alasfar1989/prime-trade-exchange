@@ -40,7 +40,7 @@ export function DiscrepancyTable({ discrepancies }: DiscrepancyTableProps) {
                 <tr key={s.shipmentId} className="border-b border-surface-200 hover:bg-red-50/30 transition-colors">
                   <td className="px-4 py-3">
                     <a
-                      href={`https://sellercentral.amazon.com/fba/inbound-queue/summary?shipmentId=${s.shipmentId}`}
+                      href={`https://sellercentral.amazon.com/fba/inbound-shipment/summary/${s.shipmentId}/shipmentEvents`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm font-medium text-brand-500 hover:text-brand-700 hover:underline"
