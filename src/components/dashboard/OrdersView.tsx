@@ -89,7 +89,16 @@ export function OrdersView() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.orderId} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
-                  <td className="px-4 py-3 text-sm font-mono text-brand-500">{o.orderId}</td>
+                  <td className="px-4 py-3">
+                    <a
+                      href={`https://sellercentral.amazon.com/orders-v3/order/${o.orderId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono text-brand-500 hover:text-brand-700 hover:underline"
+                    >
+                      {o.orderId}
+                    </a>
+                  </td>
                   <td className="px-4 py-3 text-sm text-slate-500">{format(new Date(o.purchaseDate), 'MM/dd HH:mm')}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[o.status] || 'bg-slate-100 text-slate-600'}`}>
