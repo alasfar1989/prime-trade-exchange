@@ -21,6 +21,7 @@ function getRefreshToken(): string {
 export const env = {
   PORT: parseInt(process.env.PORT || '3001'),
   API_KEY: process.env.API_KEY || '',
+  DATABASE_URL: process.env.DATABASE_URL || '',
   SP_API: {
     CLIENT_ID: required('SP_API_CLIENT_ID'),
     CLIENT_SECRET: required('SP_API_CLIENT_SECRET'),

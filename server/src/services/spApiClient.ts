@@ -4,7 +4,11 @@ import { env } from '../config/env.js';
 
 const BASE_URL = 'https://sellingpartnerapi-na.amazon.com';
 
-export async function spApiGet<T>(path: string, params?: Record<string, string>): Promise<T> {
+export async function spApiGet<T>(
+  path: string,
+  params?: Record<string, string>,
+  injectMarketplace = true
+): Promise<T> {
   const token = await getAccessToken();
 
   const config: AxiosRequestConfig = {
@@ -14,10 +18,9 @@ export async function spApiGet<T>(path: string, params?: Record<string, string>)
       'x-amz-access-token': token,
       'Content-Type': 'application/json',
     },
-    params: {
-      ...params,
-      MarketplaceId: env.SP_API.MARKETPLACE_ID,
-    },
+    params: injectMarketplace
+      ? { ...params, MarketplaceId: env.SP_API.MARKETPLACE_ID }
+      : { ...params },
   };
 
   const res = await axios(config);

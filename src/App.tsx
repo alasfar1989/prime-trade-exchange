@@ -6,18 +6,20 @@ import { DateNavigator } from './components/navigation/DateNavigator';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { InventoryView } from './components/dashboard/InventoryView';
 import { OrdersView } from './components/dashboard/OrdersView';
+import { ProfitView } from './components/dashboard/ProfitView';
 import { ExportButton } from './components/shared/ExportButton';
 import { useShipments } from './hooks/useShipments';
 import { useDateNavigation } from './hooks/useDateNavigation';
 import { buildDailySummary } from './lib/dateUtils';
-import { Truck, Package, ShoppingCart, RefreshCw } from 'lucide-react';
+import { Truck, Package, ShoppingCart, TrendingUp, RefreshCw } from 'lucide-react';
 
-type Tab = 'shipments' | 'inventory' | 'orders';
+type Tab = 'shipments' | 'inventory' | 'orders' | 'profit';
 
 const TABS: { id: Tab; label: string; icon: typeof Truck }[] = [
   { id: 'shipments', label: 'Shipments', icon: Truck },
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'orders', label: 'Orders', icon: ShoppingCart },
+  { id: 'profit', label: 'Profit', icon: TrendingUp },
 ];
 
 export default function App() {
@@ -111,6 +113,7 @@ export default function App() {
 
         {activeTab === 'inventory' && <InventoryView />}
         {activeTab === 'orders' && <OrdersView />}
+        {activeTab === 'profit' && <ProfitView />}
       </main>
       <Footer />
     </>

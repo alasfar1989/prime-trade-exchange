@@ -25,3 +25,22 @@ export async function fetchApi<T>(path: string, params?: Record<string, string>)
 
   return res.json();
 }
+
+export async function putApi<T>(path: string, body: unknown): Promise<ApiResponse<T>> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let msg = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const j = await res.json();
+      if (j?.error) msg = j.error;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+
+  return res.json();
+}

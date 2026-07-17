@@ -1,9 +1,54 @@
+import { useState } from 'react';
 import { useInventory } from '../../hooks/useInventory';
-import { RefreshCw, Package, AlertCircle } from 'lucide-react';
+import { useCosts } from '../../hooks/useCosts';
+import { RefreshCw, Package, AlertCircle, Check } from 'lucide-react';
 import { Button } from '../shared/Button';
+
+// Editable per-SKU cost cell. Saves on blur / Enter when the value changes.
+function CostCell({ sku, value, onSave }: { sku: string; value?: number; onSave: (sku: string, cost: number) => Promise<void> }) {
+  const [text, setText] = useState(value != null ? String(value) : '');
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function commit() {
+    const trimmed = text.trim();
+    const num = parseFloat(trimmed);
+    if (trimmed === '' || Number.isNaN(num) || num < 0) return;
+    if (value != null && num === value) return;
+    setBusy(true);
+    try {
+      await onSave(sku, num);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <span className="text-slate-400 text-sm">$</span>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        inputMode="decimal"
+        value={text}
+        placeholder="—"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        disabled={busy}
+        className="w-20 text-right text-sm rounded-md border border-surface-200 bg-surface-0 px-2 py-1 text-brand-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
+      />
+      {saved && <Check size={14} className="text-status-green" />}
+    </div>
+  );
+}
 
 export function InventoryView() {
   const { inventory, loading, error, cachedAt, refresh } = useInventory();
+  const { costs, saveCost } = useCosts();
 
   if (loading && inventory.length === 0) {
     return (
@@ -78,6 +123,7 @@ export function InventoryView() {
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Inbound</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Reserved</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Total</th>
+                <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Unit Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -90,6 +136,9 @@ export function InventoryView() {
                   <td className="px-4 py-3 text-sm text-brand-500 text-right">{item.inboundShipped + item.inboundReceiving + item.inboundWorking}</td>
                   <td className="px-4 py-3 text-sm text-status-yellow text-right">{item.reserved}</td>
                   <td className="px-4 py-3 text-sm font-semibold text-brand-900 text-right">{item.totalQuantity}</td>
+                  <td className="px-4 py-3 text-right">
+                    <CostCell sku={item.sku} value={costs[item.sku]} onSave={saveCost} />
+                  </td>
                 </tr>
               ))}
             </tbody>

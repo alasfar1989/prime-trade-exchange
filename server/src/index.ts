@@ -3,11 +3,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './config/env.js';
+import { initDb } from './db.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import healthRoutes from './routes/health.js';
 import shipmentRoutes from './routes/shipments.js';
 import inventoryRoutes from './routes/inventory.js';
 import orderRoutes from './routes/orders.js';
+import costRoutes from './routes/costs.js';
+import profitRoutes from './routes/profit.js';
 
 const app = express();
 
@@ -44,10 +47,17 @@ app.use('/api', healthRoutes);
 app.use('/api', shipmentRoutes);
 app.use('/api', inventoryRoutes);
 app.use('/api', orderRoutes);
+app.use('/api', costRoutes);
+app.use('/api', profitRoutes);
 
 // Error handler
 app.use(errorHandler);
 
-app.listen(env.PORT, () => {
-  console.log(`Prime Trade Exchange API running on port ${env.PORT}`);
-});
+// Ensure the cost table exists, then start listening (DB failure is non-fatal).
+initDb()
+  .catch((err) => console.error('Database init error:', err.message))
+  .finally(() => {
+    app.listen(env.PORT, () => {
+      console.log(`Prime Trade Exchange API running on port ${env.PORT}`);
+    });
+  });
