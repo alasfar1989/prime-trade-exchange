@@ -27,5 +27,14 @@ export async function initDb(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  console.log('Database ready (item_costs).');
+  // Cache of resolved product names for SKUs not in current FBA inventory
+  // (sold-out / merchant-fulfilled), looked up from the Listings API.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sku_names (
+      sku        TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log('Database ready (item_costs, sku_names).');
 }

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { fetchSkuFinances, type SkuFinance } from '../services/finances.js';
 import { getAllCosts } from '../services/costs.js';
 import { fetchInventory } from '../services/inventory.js';
+import { getCachedNames, saveNames } from '../services/names.js';
+import { fetchListingName } from '../services/listings.js';
 import { cacheGet, cacheSet } from '../cache/memoryCache.js';
 
 const router = Router();
@@ -28,11 +30,29 @@ router.get('/profit', async (req, res, next) => {
       cacheSet(cacheKey, finances, FIN_TTL);
     }
 
-    const [costs, inventory] = await Promise.all([
+    const [costs, inventory, cachedNames] = await Promise.all([
       getAllCosts(),
       fetchInventory().catch(() => [] as Array<{ sku: string; productName: string }>),
+      getCachedNames().catch(() => new Map<string, string>()),
     ]);
-    const nameBySku = new Map(inventory.map((i) => [i.sku, i.productName]));
+    const nameBySku = new Map<string, string>(inventory.map((i) => [i.sku, i.productName]));
+    // Fill names for sold SKUs not in current inventory: DB cache first, then
+    // the Listings API for anything still unresolved (persist what we find).
+    for (const [sku, name] of cachedNames) {
+      if (!nameBySku.get(sku)) nameBySku.set(sku, name);
+    }
+    const unresolved = finances.filter((f) => !nameBySku.get(f.sku)).map((f) => f.sku);
+    if (unresolved.length) {
+      const fetched = new Map<string, string>();
+      for (const sku of unresolved) {
+        const name = await fetchListingName(sku);
+        if (name) {
+          nameBySku.set(sku, name);
+          fetched.set(sku, name);
+        }
+      }
+      saveNames(fetched).catch(() => {});
+    }
 
     const totals = { unitsSold: 0, revenue: 0, fees: 0, cost: 0, profit: 0, missingCost: 0 };
     const rows = finances.map((f) => {

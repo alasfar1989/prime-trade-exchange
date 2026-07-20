@@ -119,7 +119,7 @@ export function ProfitView() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.sku} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
-                  <td className="px-4 py-3 text-sm text-brand-900 max-w-[240px] truncate">{r.productName || <span className="text-slate-400 italic">Unknown</span>}</td>
+                  <td className="px-4 py-3 text-sm text-brand-900 max-w-[240px] truncate">{r.productName || <span className="text-slate-400 italic" title="Sold-out or merchant-fulfilled — no listing name found">{r.sku}</span>}</td>
                   <td className="px-4 py-3 text-sm font-mono text-slate-500">{r.sku}</td>
                   <td className="px-4 py-3 text-sm text-brand-900 text-right">{r.unitsSold}</td>
                   <td className="px-4 py-3 text-sm text-status-green text-right">{money(r.revenue)}</td>
