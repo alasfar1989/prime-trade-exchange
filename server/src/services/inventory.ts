@@ -45,18 +45,48 @@ export interface InventoryItem {
   lastUpdated: string;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function fetchInventory(): Promise<InventoryItem[]> {
-  const res = await spApiGet<{ payload: { inventorySummaries: SpInventorySummary[] } }>(
-    '/fba/inventory/v1/summaries',
-    {
+  const mkt = env.SP_API.MARKETPLACE_ID;
+  const summaries: SpInventorySummary[] = [];
+  let nextToken: string | undefined;
+
+  // Paginate through ALL FBA inventory (one call returns ~50 + a nextToken).
+  do {
+    const params: Record<string, string> = {
       details: 'true',
       granularityType: 'Marketplace',
-      granularityId: env.SP_API.MARKETPLACE_ID,
-      marketplaceIds: env.SP_API.MARKETPLACE_ID,
-    }
-  );
+      granularityId: mkt,
+      marketplaceIds: mkt,
+      ...(nextToken ? { nextToken } : {}),
+    };
 
-  const summaries = res.payload?.inventorySummaries || [];
+    let res;
+    let attempt = 0;
+    // getInventorySummaries has a low rate limit (~2 req/s) — retry on 429.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        res = await spApiGet<{
+          pagination?: { nextToken?: string };
+          payload: { inventorySummaries: SpInventorySummary[] };
+        }>('/fba/inventory/v1/summaries', params);
+        break;
+      } catch (err: any) {
+        if (err?.response?.status === 429 && attempt < 5) {
+          attempt++;
+          await sleep(1000 * attempt);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    summaries.push(...(res.payload?.inventorySummaries || []));
+    nextToken = res.pagination?.nextToken;
+    if (nextToken) await sleep(600);
+  } while (nextToken);
 
   return summaries.map((s) => {
     const d = s.inventoryDetails || {};
