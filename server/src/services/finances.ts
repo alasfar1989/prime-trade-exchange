@@ -28,6 +28,7 @@ export interface SkuFinance {
   unitsSold: number;
   revenue: number; // sum of Principal charges (positive)
   fees: number;    // sum of Amazon fees (negative, as Amazon returns them)
+  sampleOrderId?: string; // one order containing this SKU (to resolve its name)
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -72,6 +73,7 @@ export async function fetchSkuFinances(daysBack = 30): Promise<SkuFinance[]> {
         const sku = item.SellerSKU;
         if (!sku) continue;
         const rec = bySku.get(sku) || { sku, unitsSold: 0, revenue: 0, fees: 0 };
+        if (!rec.sampleOrderId && ev.AmazonOrderId) rec.sampleOrderId = ev.AmazonOrderId;
         rec.unitsSold += item.QuantityShipped || 0;
         for (const c of item.ItemChargeList || []) {
           if (c.ChargeType === 'Principal') rec.revenue += c.ChargeAmount?.CurrencyAmount || 0;

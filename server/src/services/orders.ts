@@ -68,3 +68,23 @@ export async function fetchOrders(daysBack = 30): Promise<Order[]> {
     }))
     .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
 }
+
+interface SpOrderItem {
+  SellerSKU?: string;
+  Title?: string;
+}
+
+// Product titles (names) for the line items of one order, keyed by seller SKU.
+// Used to resolve names for SKUs not in current FBA inventory.
+export async function fetchOrderItems(orderId: string): Promise<Map<string, string>> {
+  const res = await spApiGet<{ payload: { OrderItems: SpOrderItem[] } }>(
+    `/orders/v0/orders/${encodeURIComponent(orderId)}/orderItems`,
+    {},
+    false
+  );
+  const map = new Map<string, string>();
+  for (const it of res.payload?.OrderItems || []) {
+    if (it.SellerSKU && it.Title) map.set(it.SellerSKU, it.Title);
+  }
+  return map;
+}

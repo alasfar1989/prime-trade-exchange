@@ -3,7 +3,7 @@ import { fetchSkuFinances, type SkuFinance } from '../services/finances.js';
 import { getAllCosts } from '../services/costs.js';
 import { fetchInventory } from '../services/inventory.js';
 import { getCachedNames, saveNames } from '../services/names.js';
-import { fetchListingName } from '../services/listings.js';
+import { fetchOrderItems } from '../services/orders.js';
 import { cacheGet, cacheSet } from '../cache/memoryCache.js';
 
 const router = Router();
@@ -41,15 +41,23 @@ router.get('/profit', async (req, res, next) => {
     for (const [sku, name] of cachedNames) {
       if (!nameBySku.get(sku)) nameBySku.set(sku, name);
     }
-    const unresolved = finances.filter((f) => !nameBySku.get(f.sku)).map((f) => f.sku);
+    const unresolved = finances.filter((f) => !nameBySku.get(f.sku));
     if (unresolved.length) {
       const fetched = new Map<string, string>();
-      for (const sku of unresolved) {
-        const name = await fetchListingName(sku);
-        if (name) {
-          nameBySku.set(sku, name);
-          fetched.set(sku, name);
-        }
+      // Fetch the order behind each unresolved SKU once; one order can name
+      // several SKUs. Titles are cached in the DB so this only runs for new SKUs.
+      const orderIds = [...new Set(unresolved.map((f) => f.sampleOrderId).filter((x): x is string => !!x))];
+      for (const oid of orderIds) {
+        try {
+          const items = await fetchOrderItems(oid);
+          for (const [sku, title] of items) {
+            if (!nameBySku.get(sku)) {
+              nameBySku.set(sku, title);
+              fetched.set(sku, title);
+            }
+          }
+        } catch { /* skip this order */ }
+        await new Promise((r) => setTimeout(r, 300)); // getOrderItems is rate-limited
       }
       saveNames(fetched).catch(() => {});
     }
