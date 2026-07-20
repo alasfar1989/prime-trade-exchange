@@ -58,6 +58,17 @@ export function ProfitView() {
         </div>
       </div>
 
+      {/* Surface a refresh error but keep the last-loaded data visible */}
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <AlertCircle size={16} className="text-status-red shrink-0" />
+          <p className="text-sm text-status-red">Couldn't load this range: {error}. Showing the last data — tap the refresh icon to retry.</p>
+        </div>
+      )}
+
+      {/* Data area — dims while a new timeframe is loading */}
+      <div className={`space-y-6 transition-opacity ${loading ? 'opacity-40 pointer-events-none' : ''}`}>
+
       {/* Summary cards */}
       {t && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -145,6 +156,7 @@ export function ProfitView() {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   );
