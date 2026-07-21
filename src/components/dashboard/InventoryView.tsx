@@ -75,14 +75,13 @@ export function InventoryView() {
   const totalInbound = inventory.reduce((sum, i) => sum + i.inboundShipped + i.inboundReceiving + i.inboundWorking, 0);
   const totalReserved = inventory.reduce((sum, i) => sum + i.reserved, 0);
 
-  // Value of inventory on hand + inbound + reserved, at your unit cost.
-  // Only SKUs that have a cost set are counted.
-  const ownedUnits = (i: typeof inventory[number]) =>
-    i.fulfillable + i.inboundWorking + i.inboundShipped + i.inboundReceiving + i.reserved;
-  const inventoryValue = inventory.reduce((sum, i) => {
+  // Line value = the SKU's total units x your unit cost (null if no cost set).
+  // The Inventory Value card is the sum of these, so the column ties to the card.
+  const lineValue = (i: typeof inventory[number]): number | null => {
     const c = costs[i.sku];
-    return c != null ? sum + ownedUnits(i) * c : sum;
-  }, 0);
+    return c != null ? i.totalQuantity * c : null;
+  };
+  const inventoryValue = inventory.reduce((sum, i) => sum + (lineValue(i) ?? 0), 0);
   const pricedCount = inventory.filter((i) => costs[i.sku] != null).length;
 
   return (
@@ -139,6 +138,7 @@ export function InventoryView() {
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Reserved</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Total</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Unit Cost</th>
+                <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Value</th>
               </tr>
             </thead>
             <tbody>
@@ -153,6 +153,14 @@ export function InventoryView() {
                   <td className="px-4 py-3 text-sm font-semibold text-brand-900 text-right">{item.totalQuantity}</td>
                   <td className="px-4 py-3 text-right">
                     <CostCell sku={item.sku} value={costs[item.sku]} onSave={saveCost} />
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-right">
+                    {(() => {
+                      const v = lineValue(item);
+                      return v != null
+                        ? <span className="text-brand-700">${Math.round(v).toLocaleString()}</span>
+                        : <span className="text-slate-300">—</span>;
+                    })()}
                   </td>
                 </tr>
               ))}
