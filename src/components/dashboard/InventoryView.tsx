@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useInventory } from '../../hooks/useInventory';
 import { useCosts } from '../../hooks/useCosts';
 import { RefreshCw, Package, AlertCircle, Check } from 'lucide-react';
@@ -9,6 +9,12 @@ function CostCell({ sku, value, onSave }: { sku: string; value?: number; onSave:
   const [text, setText] = useState(value != null ? String(value) : '');
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Costs load asynchronously (after the rows first render), so sync the input
+  // when the stored value arrives or changes.
+  useEffect(() => {
+    setText(value != null ? String(value) : '');
+  }, [value]);
 
   async function commit() {
     const trimmed = text.trim();
