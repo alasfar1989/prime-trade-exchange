@@ -75,10 +75,25 @@ export function InventoryView() {
   const totalInbound = inventory.reduce((sum, i) => sum + i.inboundShipped + i.inboundReceiving + i.inboundWorking, 0);
   const totalReserved = inventory.reduce((sum, i) => sum + i.reserved, 0);
 
+  // Value of inventory on hand + inbound + reserved, at your unit cost.
+  // Only SKUs that have a cost set are counted.
+  const ownedUnits = (i: typeof inventory[number]) =>
+    i.fulfillable + i.inboundWorking + i.inboundShipped + i.inboundReceiving + i.reserved;
+  const inventoryValue = inventory.reduce((sum, i) => {
+    const c = costs[i.sku];
+    return c != null ? sum + ownedUnits(i) * c : sum;
+  }, 0);
+  const pricedCount = inventory.filter((i) => costs[i.sku] != null).length;
+
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Inventory Value</p>
+          <p className="text-3xl font-bold text-brand-700 mt-2">${Math.round(inventoryValue).toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-1">{pricedCount} of {inventory.length} SKUs priced</p>
+        </div>
         <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total SKUs</p>
           <p className="text-4xl font-bold text-brand-900 mt-2">{inventory.length.toLocaleString()}</p>
