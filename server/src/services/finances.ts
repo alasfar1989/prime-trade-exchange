@@ -1,5 +1,5 @@
 import { spApiGet } from './spApiClient.js';
-import { subDays, format } from 'date-fns';
+import { format } from 'date-fns';
 
 // --- SP-API Finances shapes (only the fields we use) ---
 interface Money { CurrencyAmount?: number; CurrencyCode?: string }
@@ -52,18 +52,19 @@ async function getPage(params: Record<string, string>): Promise<FinancialEventsR
 }
 
 /**
- * Pull shipment (sale) financial events over the last `daysBack` days and
+ * Pull shipment (sale) financial events for the [from, to] date range and
  * aggregate proceeds + fees per seller SKU. Refunds are not included in v1.
  */
-export async function fetchSkuFinances(daysBack = 30): Promise<SkuFinance[]> {
-  const postedAfter = format(subDays(new Date(), daysBack), "yyyy-MM-dd'T'HH:mm:ss'Z'");
+export async function fetchSkuFinances(from: Date, to: Date): Promise<SkuFinance[]> {
+  const postedAfter = format(from, "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  const postedBefore = format(to, "yyyy-MM-dd'T'HH:mm:ss'Z'");
   const bySku = new Map<string, SkuFinance>();
   let nextToken: string | undefined;
 
   do {
     const params: Record<string, string> = nextToken
       ? { NextToken: nextToken }
-      : { PostedAfter: postedAfter, MaxResultsPerPage: '100' };
+      : { PostedAfter: postedAfter, PostedBefore: postedBefore, MaxResultsPerPage: '100' };
 
     const res = await getPage(params);
     const events = res.payload?.FinancialEvents?.ShipmentEventList || [];

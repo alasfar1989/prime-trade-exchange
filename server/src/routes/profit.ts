@@ -11,14 +11,36 @@ const FIN_TTL = 5 * 60 * 1000; // cache the (slow, rate-limited) SP-API pull for
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
-// GET /api/profit?days=30
+// GET /api/profit?days=30  or  /api/profit?from=2026-06-01&to=2026-06-30
 router.get('/profit', async (req, res, next) => {
   try {
+    const fromStr = req.query.from as string | undefined;
+    const toStr = req.query.to as string | undefined;
     const days = parseInt(req.query.days as string) || 30;
 
-    // Finances come from SP-API (cached); costs come from the DB (always fresh,
-    // so a cost edit shows up immediately without re-hitting Amazon).
-    const cacheKey = `finances:${days}`;
+    // Resolve the [from, to] window. Explicit from/to (YYYY-MM-DD) wins;
+    // otherwise fall back to the trailing `days` window.
+    const now = new Date();
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    let fromDate: Date;
+    let toDate: Date;
+    if (fromStr && toStr && dateRe.test(fromStr) && dateRe.test(toStr)) {
+      fromDate = new Date(`${fromStr}T00:00:00.000Z`);
+      toDate = new Date(`${toStr}T23:59:59.999Z`);
+    } else {
+      toDate = now;
+      fromDate = new Date(now.getTime() - days * 86400_000);
+    }
+    // The Finances API rejects PostedBefore within ~2 min of now — clamp it.
+    const maxTo = new Date(now.getTime() - 3 * 60_000);
+    if (toDate > maxTo) toDate = maxTo;
+    if (fromDate >= toDate) fromDate = new Date(toDate.getTime() - 86400_000);
+    const fromISO = fromDate.toISOString();
+    const toISO = toDate.toISOString();
+
+    // Finances come from SP-API (cached by range); costs come from the DB
+    // (always fresh, so a cost edit shows up immediately without re-hitting Amazon).
+    const cacheKey = `finances:${fromISO}:${toISO}`;
     let finances: SkuFinance[];
     let source: 'sp-api' | 'cache' = 'sp-api';
     const cached = cacheGet<SkuFinance[]>(cacheKey);
@@ -26,7 +48,7 @@ router.get('/profit', async (req, res, next) => {
       finances = (await cached.data) as SkuFinance[];
       source = 'cache';
     } else {
-      finances = await fetchSkuFinances(days);
+      finances = await fetchSkuFinances(fromDate, toDate);
       cacheSet(cacheKey, finances, FIN_TTL);
     }
 
@@ -102,7 +124,7 @@ router.get('/profit', async (req, res, next) => {
           skuCount: rows.length,
           missingCost: totals.missingCost,
         },
-        days,
+        range: { from: fromISO, to: toISO },
       },
       meta: { source, cachedAt: new Date().toISOString() },
     });
