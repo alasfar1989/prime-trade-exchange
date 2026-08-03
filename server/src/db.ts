@@ -36,5 +36,23 @@ export async function initDb(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  console.log('Database ready (item_costs, sku_names).');
+  // Operating expenses the user logs by hand — shipping supplies, software,
+  // prep services, storage overages and so on. Deliberately NOT part of the
+  // profit calculation: /api/profit stays revenue - Amazon fees - COGS.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id           BIGSERIAL PRIMARY KEY,
+      expense_date DATE NOT NULL,
+      category     TEXT NOT NULL,
+      description  TEXT NOT NULL,
+      amount       NUMERIC(12,2) NOT NULL,
+      vendor       TEXT,
+      notes        TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Every read is a date-window query, so expense_date carries the lookups.
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date DESC)');
+  console.log('Database ready (item_costs, sku_names, expenses).');
 }

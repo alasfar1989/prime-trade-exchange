@@ -11,6 +11,7 @@ import inventoryRoutes from './routes/inventory.js';
 import orderRoutes from './routes/orders.js';
 import costRoutes from './routes/costs.js';
 import profitRoutes from './routes/profit.js';
+import expenseRoutes from './routes/expenses.js';
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use('/api', inventoryRoutes);
 app.use('/api', orderRoutes);
 app.use('/api', costRoutes);
 app.use('/api', profitRoutes);
+app.use('/api', expenseRoutes);
 
 // Error handler
 app.use(errorHandler);

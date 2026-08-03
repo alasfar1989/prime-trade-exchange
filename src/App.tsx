@@ -7,19 +7,21 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { InventoryView } from './components/dashboard/InventoryView';
 import { OrdersView } from './components/dashboard/OrdersView';
 import { ProfitView } from './components/dashboard/ProfitView';
+import { ExpensesView } from './components/dashboard/ExpensesView';
 import { ExportButton } from './components/shared/ExportButton';
 import { useShipments } from './hooks/useShipments';
 import { useDateNavigation } from './hooks/useDateNavigation';
 import { buildDailySummary } from './lib/dateUtils';
-import { Truck, Package, ShoppingCart, TrendingUp, RefreshCw } from 'lucide-react';
+import { Truck, Package, ShoppingCart, TrendingUp, Receipt, RefreshCw } from 'lucide-react';
 
-type Tab = 'shipments' | 'inventory' | 'orders' | 'profit';
+type Tab = 'shipments' | 'inventory' | 'orders' | 'profit' | 'expenses';
 
 const TABS: { id: Tab; label: string; icon: typeof Truck }[] = [
   { id: 'shipments', label: 'Shipments', icon: Truck },
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'orders', label: 'Orders', icon: ShoppingCart },
   { id: 'profit', label: 'Profit', icon: TrendingUp },
+  { id: 'expenses', label: 'Expenses', icon: Receipt },
 ];
 
 export default function App() {
@@ -114,6 +116,7 @@ export default function App() {
         {activeTab === 'inventory' && <InventoryView />}
         {activeTab === 'orders' && <OrdersView />}
         {activeTab === 'profit' && <ProfitView />}
+        {activeTab === 'expenses' && <ExpensesView />}
       </main>
       <Footer />
     </>

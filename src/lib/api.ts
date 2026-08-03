@@ -26,11 +26,15 @@ export async function fetchApi<T>(path: string, params?: Record<string, string>)
   return res.json();
 }
 
-export async function putApi<T>(path: string, body: unknown): Promise<ApiResponse<T>> {
+// Shared write path for PUT/POST/DELETE — surfaces the server's `error`
+// message when there is one instead of a bare status line.
+async function writeApi<T>(method: 'PUT' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<ApiResponse<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: 'PUT',
-    headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method,
+    headers: body === undefined
+      ? { 'X-API-Key': API_KEY }
+      : { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -43,4 +47,16 @@ export async function putApi<T>(path: string, body: unknown): Promise<ApiRespons
   }
 
   return res.json();
+}
+
+export function putApi<T>(path: string, body: unknown): Promise<ApiResponse<T>> {
+  return writeApi<T>('PUT', path, body);
+}
+
+export function postApi<T>(path: string, body: unknown): Promise<ApiResponse<T>> {
+  return writeApi<T>('POST', path, body);
+}
+
+export function deleteApi<T>(path: string): Promise<ApiResponse<T>> {
+  return writeApi<T>('DELETE', path);
 }
