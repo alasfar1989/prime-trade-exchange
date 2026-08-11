@@ -5,7 +5,9 @@ import morgan from 'morgan';
 import { env } from './config/env.js';
 import { initDb } from './db.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { requireAuth } from './middleware/requireAuth.js';
 import healthRoutes from './routes/health.js';
+import authRoutes from './routes/auth.js';
 import shipmentRoutes from './routes/shipments.js';
 import inventoryRoutes from './routes/inventory.js';
 import orderRoutes from './routes/orders.js';
@@ -22,6 +24,8 @@ app.use(cors({
     // Allow requests from the custom domain, Vercel previews, and no-origin (curl, etc.)
     if (!origin
       || origin === 'https://primetradeexchange.net'
+      || origin === 'https://primetradingexchange.net'
+      || origin === 'https://www.primetradingexchange.net'
       || origin.endsWith('.vercel.app')
       || origin === 'http://localhost:5173') {
       callback(null, origin || '*');
@@ -43,14 +47,17 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Routes
+// Public routes (no login required)
 app.use('/api', healthRoutes);
-app.use('/api', shipmentRoutes);
-app.use('/api', inventoryRoutes);
-app.use('/api', orderRoutes);
-app.use('/api', costRoutes);
-app.use('/api', profitRoutes);
-app.use('/api', expenseRoutes);
+app.use('/api', authRoutes);
+
+// Protected routes — require a valid login token
+app.use('/api', requireAuth, shipmentRoutes);
+app.use('/api', requireAuth, inventoryRoutes);
+app.use('/api', requireAuth, orderRoutes);
+app.use('/api', requireAuth, costRoutes);
+app.use('/api', requireAuth, profitRoutes);
+app.use('/api', requireAuth, expenseRoutes);
 
 // Error handler
 app.use(errorHandler);

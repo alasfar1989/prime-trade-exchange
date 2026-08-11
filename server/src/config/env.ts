@@ -30,4 +30,10 @@ export const env = {
     SELLER_ID: required('SP_API_SELLER_ID'),
   },
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
+  AUTH: {
+    USER: process.env.DASHBOARD_USER || 'admin',
+    // No code default for the password — must come from an env var.
+    PASS: process.env.DASHBOARD_PASS || '',
+    JWT_SECRET: process.env.JWT_SECRET || 'dev-only-insecure-secret-change-me',
+  },
 };
