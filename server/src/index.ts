@@ -14,6 +14,8 @@ import orderRoutes from './routes/orders.js';
 import costRoutes from './routes/costs.js';
 import profitRoutes from './routes/profit.js';
 import expenseRoutes from './routes/expenses.js';
+import clockRoutes from './routes/clock.js';
+import timeclockRoutes from './routes/timeclock.js';
 
 const app = express();
 
@@ -50,6 +52,9 @@ app.use('/api', (req, res, next) => {
 // Public routes (no login required)
 app.use('/api', healthRoutes);
 app.use('/api', authRoutes);
+// Employee time clock: /clock/login is public, the rest gate on an employee
+// token inside the router. Employee tokens never reach the routes below.
+app.use('/api', clockRoutes);
 
 // Protected routes — require a valid login token
 app.use('/api', requireAuth, shipmentRoutes);
@@ -58,6 +63,7 @@ app.use('/api', requireAuth, orderRoutes);
 app.use('/api', requireAuth, costRoutes);
 app.use('/api', requireAuth, profitRoutes);
 app.use('/api', requireAuth, expenseRoutes);
+app.use('/api', requireAuth, timeclockRoutes);
 
 // Error handler
 app.use(errorHandler);

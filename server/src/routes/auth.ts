@@ -12,7 +12,7 @@ router.post('/auth/login', (req, res) => {
     res.status(401).json({ error: 'Invalid username or password' });
     return;
   }
-  const token = signToken({ sub: env.AUTH.USER });
+  const token = signToken({ sub: env.AUTH.USER, role: 'admin' });
   res.json({ token });
 });
 

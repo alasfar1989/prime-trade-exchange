@@ -9,14 +9,15 @@ import { InventoryView } from '../components/dashboard/InventoryView';
 import { OrdersView } from '../components/dashboard/OrdersView';
 import { ProfitView } from '../components/dashboard/ProfitView';
 import { ExpensesView } from '../components/dashboard/ExpensesView';
+import { TimeclockView } from '../components/dashboard/TimeclockView';
 import { ExportButton } from '../components/shared/ExportButton';
 import { useShipments } from '../hooks/useShipments';
 import { useDateNavigation } from '../hooks/useDateNavigation';
 import { buildDailySummary } from '../lib/dateUtils';
 import { clearToken } from '../lib/auth';
-import { Truck, Package, ShoppingCart, TrendingUp, Receipt, RefreshCw, LogOut } from 'lucide-react';
+import { Truck, Package, ShoppingCart, TrendingUp, Receipt, Clock, RefreshCw, LogOut } from 'lucide-react';
 
-type Tab = 'shipments' | 'inventory' | 'orders' | 'profit' | 'expenses';
+type Tab = 'shipments' | 'inventory' | 'orders' | 'profit' | 'expenses' | 'timeclock';
 
 const TABS: { id: Tab; label: string; icon: typeof Truck }[] = [
   { id: 'shipments', label: 'Shipments', icon: Truck },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string; icon: typeof Truck }[] = [
   { id: 'orders', label: 'Orders', icon: ShoppingCart },
   { id: 'profit', label: 'Profit', icon: TrendingUp },
   { id: 'expenses', label: 'Expenses', icon: Receipt },
+  { id: 'timeclock', label: 'Time Clock', icon: Clock },
 ];
 
 export default function Dashboard() {
@@ -133,6 +135,7 @@ export default function Dashboard() {
         {activeTab === 'orders' && <OrdersView />}
         {activeTab === 'profit' && <ProfitView />}
         {activeTab === 'expenses' && <ExpensesView />}
+        {activeTab === 'timeclock' && <TimeclockView />}
       </main>
       <Footer />
     </>

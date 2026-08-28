@@ -38,3 +38,22 @@ export function safeEqual(a: string, b: string): boolean {
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
 }
+
+// --- Employee credentials ---------------------------------------------------
+// Employees punch in from their own phones, so each has a real password.
+// scrypt is in Node's stdlib — no new dependency, and it is a proper
+// password-hashing function (unlike a bare SHA of the password).
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const key = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${key}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [scheme, salt, key] = String(stored).split('$');
+  if (scheme !== 'scrypt' || !salt || !key) return false;
+  const expected = Buffer.from(key, 'hex');
+  const derived = crypto.scryptSync(password, salt, expected.length);
+  return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+}
