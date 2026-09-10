@@ -3,6 +3,7 @@ import { RefreshCw, TrendingUp, AlertCircle, Info, Download } from 'lucide-react
 import { format, startOfMonth, endOfMonth, subMonths, subDays, isSameDay } from 'date-fns';
 import { openProfitReport } from '../../lib/profitReport';
 import { PerformersGrid } from './PerformersGrid';
+import { AccountSummary } from './AccountSummary';
 
 const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -175,7 +176,7 @@ export function ProfitView() {
             <p className="text-xs text-slate-400 mt-1">your unit costs</p>
           </div>
           <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Net Profit</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Product Profit</p>
             <p className={`text-3xl font-bold mt-2 ${t.profit >= 0 ? 'text-brand-900' : 'text-status-red'}`}>{money(t.profit)}</p>
             <p className="text-xs text-slate-400 mt-1">{t.margin != null ? `${t.margin.toFixed(1)}% margin` : '—'}</p>
           </div>
@@ -192,6 +193,9 @@ export function ProfitView() {
           </p>
         </div>
       )}
+
+      {/* Account-level income & costs */}
+      {t && data?.account && <AccountSummary totals={t} account={data.account} />}
 
       {/* Best / worst performers */}
       {t && <PerformersGrid rows={rows} totals={t} />}

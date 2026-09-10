@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchSkuFinances, type SkuFinance } from '../services/finances.js';
+import { fetchFinances, type FinancesResult } from '../services/finances.js';
 import { getAllCosts } from '../services/costs.js';
 import { fetchInventory } from '../services/inventory.js';
 import { getCachedNames, saveNames } from '../services/names.js';
@@ -41,16 +41,18 @@ router.get('/profit', async (req, res, next) => {
     // Finances come from SP-API (cached by range); costs come from the DB
     // (always fresh, so a cost edit shows up immediately without re-hitting Amazon).
     const cacheKey = `finances:${fromISO}:${toISO}`;
-    let finances: SkuFinance[];
+    let result: FinancesResult;
     let source: 'sp-api' | 'cache' = 'sp-api';
-    const cached = cacheGet<SkuFinance[]>(cacheKey);
+    const cached = cacheGet<FinancesResult>(cacheKey);
     if (cached) {
-      finances = (await cached.data) as SkuFinance[];
+      result = (await cached.data) as FinancesResult;
       source = 'cache';
     } else {
-      finances = await fetchSkuFinances(fromDate, toDate);
-      cacheSet(cacheKey, finances, FIN_TTL);
+      result = await fetchFinances(fromDate, toDate);
+      cacheSet(cacheKey, result, FIN_TTL);
     }
+    const finances = result.skus;
+    const account = result.account;
 
     const [costs, inventory, cachedNames] = await Promise.all([
       getAllCosts(),
@@ -119,6 +121,13 @@ router.get('/profit', async (req, res, next) => {
 
     rows.sort((a, b) => b.profit - a.profit);
 
+    // Reimbursements and account fees are deliberately kept out of the per-SKU
+    // rollup: neither belongs to a sale, and folding them in would misstate
+    // product margin. They meet the product number here, one level up.
+    const reimbursements = round(account.reimbursements);
+    const serviceFees = round(account.serviceFees);
+    const operatingProfit = round(totals.profit + account.reimbursements + account.serviceFees);
+
     res.json({
       data: {
         rows,
@@ -134,6 +143,15 @@ router.get('/profit', async (req, res, next) => {
           margin: totals.revenue ? round((totals.profit / totals.revenue) * 100) : null,
           skuCount: rows.length,
           missingCost: totals.missingCost,
+          reimbursements,
+          serviceFees,
+          operatingProfit,
+        },
+        account: {
+          reimbursements,
+          reimbursementsByType: account.reimbursementsByType.map((i) => ({ ...i, amount: round(i.amount) })),
+          serviceFees,
+          serviceFeesByType: account.serviceFeesByType.map((i) => ({ ...i, amount: round(i.amount) })),
         },
         range: { from: fromISO, to: toISO },
       },

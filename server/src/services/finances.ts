@@ -33,14 +33,52 @@ interface RefundEvent {
   PostedDate?: string;
   ShipmentItemAdjustmentList?: ShipmentItemAdjustment[];
 }
+// Account-level events: money that moves for the whole account, not for a sale.
+// Verified against live data — an adjustment is NOT automatically income: the
+// list carries reimbursements (WAREHOUSE_LOST, MISSING_FROM_INBOUND, …) AND
+// COMPENSATED_CLAWBACK, which is Amazon taking an earlier reimbursement back.
+// They are summed signed into one net figure, with a per-type breakdown so the
+// composition stays visible rather than hidden behind a single number.
+interface AdjustmentEvent {
+  AdjustmentType?: string;
+  AdjustmentAmount?: Money;
+}
+// Storage, inbound transport, removals, the monthly Subscription fee. Always
+// negative, never tied to a SKU, so they are operating costs and must stay out
+// of the per-SKU rollup or they would distort product margin.
+interface ServiceFeeEvent {
+  FeeList?: FeeComponent[];
+}
 interface FinancialEventsResponse {
   payload?: {
     NextToken?: string;
     FinancialEvents?: {
       ShipmentEventList?: ShipmentEvent[];
       RefundEventList?: RefundEvent[];
+      AdjustmentEventList?: AdjustmentEvent[];
+      ServiceFeeEventList?: ServiceFeeEvent[];
     };
   };
+}
+
+export interface LineItem {
+  type: string;
+  amount: number;
+  count: number;
+}
+
+export interface AccountFinance {
+  /** Net of reimbursements and clawbacks — other income, never product margin. */
+  reimbursements: number;
+  reimbursementsByType: LineItem[];
+  /** Account-level operating costs (negative). */
+  serviceFees: number;
+  serviceFeesByType: LineItem[];
+}
+
+export interface FinancesResult {
+  skus: SkuFinance[];
+  account: AccountFinance;
 }
 
 export interface SkuFinance {
@@ -88,11 +126,20 @@ const blank = (sku: string): SkuFinance => ({
  * negative net units. That is correct for the period and is left as-is so the
  * totals foot against Amazon's own settlement.
  */
-export async function fetchSkuFinances(from: Date, to: Date): Promise<SkuFinance[]> {
+export async function fetchFinances(from: Date, to: Date): Promise<FinancesResult> {
   const postedAfter = format(from, "yyyy-MM-dd'T'HH:mm:ss'Z'");
   const postedBefore = format(to, "yyyy-MM-dd'T'HH:mm:ss'Z'");
   const bySku = new Map<string, SkuFinance>();
+  const adjustments = new Map<string, LineItem>();
+  const serviceFees = new Map<string, LineItem>();
   let nextToken: string | undefined;
+
+  const tally = (m: Map<string, LineItem>, type: string, amount: number) => {
+    const rec = m.get(type) || { type, amount: 0, count: 0 };
+    rec.amount += amount;
+    rec.count += 1;
+    m.set(type, rec);
+  };
 
   do {
     const params: Record<string, string> = nextToken
@@ -151,9 +198,37 @@ export async function fetchSkuFinances(from: Date, to: Date): Promise<SkuFinance
       }
     }
 
+    for (const ev of res.payload?.FinancialEvents?.AdjustmentEventList || []) {
+      tally(adjustments, ev.AdjustmentType || 'Other', ev.AdjustmentAmount?.CurrencyAmount || 0);
+    }
+    for (const ev of res.payload?.FinancialEvents?.ServiceFeeEventList || []) {
+      for (const f of ev.FeeList || []) {
+        tally(serviceFees, f.FeeType || 'Other', f.FeeAmount?.CurrencyAmount || 0);
+      }
+    }
+
     nextToken = res.payload?.NextToken;
     if (nextToken) await sleep(600); // stay under the rate limit between pages
   } while (nextToken);
 
-  return [...bySku.values()];
+  // Biggest absolute mover first, so the line that explains the total leads.
+  // Zero-value types are dropped: Amazon reports several of them every period
+  // (surcharges that did not apply), and they add rows without adding meaning.
+  const byImpact = (m: Map<string, LineItem>) =>
+    [...m.values()]
+      .filter((i) => i.amount !== 0)
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  const sum = (items: LineItem[]) => items.reduce((s, i) => s + i.amount, 0);
+  const reimbursementsByType = byImpact(adjustments);
+  const serviceFeesByType = byImpact(serviceFees);
+
+  return {
+    skus: [...bySku.values()],
+    account: {
+      reimbursements: sum(reimbursementsByType),
+      reimbursementsByType,
+      serviceFees: sum(serviceFeesByType),
+      serviceFeesByType,
+    },
+  };
 }

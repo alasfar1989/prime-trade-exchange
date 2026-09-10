@@ -1,5 +1,6 @@
 import type { ProfitData } from '../hooks/useProfit';
 import { buildRankings, formatMetric, type Ranking } from './profitRankings';
+import { accountTypeLabel } from './accountLabels';
 
 // Brand palette (from brand.md) — inlined so the report window is self-contained.
 const C = {
@@ -52,11 +53,31 @@ function rankCard(r: Ranking): string {
     </div>`;
 }
 
+function acctTable(title: string, items: Array<{ type: string; amount: number; count: number }>, total: number, note: string): string {
+  if (!items.length) return '';
+  return `
+    <div class="acct-col">
+      <div class="acct-h"><span>${esc(title)}</span><span style="color:${total >= 0 ? C.green : C.red}">${esc(money(total))}</span></div>
+      <div class="acct-note">${esc(note)}</div>
+      <table class="acct-t">${items.map((i) => `
+        <tr>
+          <td>${esc(accountTypeLabel(i.type))}</td>
+          <td class="acct-n">&times;${i.count}</td>
+          <td class="acct-v" style="color:${i.amount >= 0 ? C.green : C.red}">${esc(money(i.amount))}</td>
+        </tr>`).join('')}</table>
+    </div>`;
+}
+
+function step(label: string, value: string, color: string, op?: string): string {
+  return `${op ? `<div class="op">${op}</div>` : ''}<div class="step"><div class="step-l">${esc(label)}</div><div class="step-v" style="color:${color}">${esc(value)}</div></div>`;
+}
+
 export function buildProfitReportHtml(data: ProfitData, periodLabel: string, generatedAt: Date): string {
   const t = data.totals;
   const rows = data.rows;
   const genStr = generatedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const { rankings, concentration, returns } = buildRankings(rows, t);
+  const acct = data.account;
 
   const bodyRows = rows.map((r) => `
     <tr>
@@ -98,6 +119,22 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
   .conc strong { color: ${C.brand900}; }
   .conc-bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
   .conc-bad strong { color: ${C.red}; }
+  .acct { border: 1px solid ${C.surface200}; border-radius: 8px; margin-bottom: 18px; break-inside: avoid; }
+  .acct-flow { display: flex; align-items: center; gap: 14px; padding: 11px 14px; border-bottom: 1px solid ${C.surface200}; flex-wrap: wrap; }
+  .op { font-size: 16px; color: ${C.slate400}; }
+  .step-l { font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: ${C.slate500}; font-weight: 600; }
+  .step-v { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .acct-total { margin-left: auto; background: ${C.surface50}; border-radius: 6px; padding: 6px 12px; }
+  .acct-total .step-l { color: ${C.brand700}; }
+  .acct-total .step-v { font-size: 19px; }
+  .acct-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 11px 14px; }
+  .acct-h { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: ${C.brand900}; }
+  .acct-note { font-size: 9px; color: ${C.slate400}; margin: 2px 0 5px; }
+  .acct-t { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .acct-t td { padding: 2.5px 0; border-bottom: 1px solid ${C.surface100}; }
+  .acct-t tr:last-child td { border-bottom: none; }
+  .acct-n { text-align: right; color: ${C.slate400}; font-size: 9px; width: 26px; }
+  .acct-v { text-align: right; font-weight: 700; white-space: nowrap; width: 78px; }
   .ranks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
   .rank-card { border: 1px solid ${C.surface200}; border-top-width: 3px; border-radius: 8px; padding: 9px 11px 10px; break-inside: avoid; }
   .rank-title { font-size: 11px; font-weight: 700; color: ${C.brand900}; }
@@ -153,10 +190,25 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
       ${kpi('Net Revenue', money(t.revenue), C.green, `${t.unitsSold.toLocaleString()} units · ${t.skuCount} SKUs${t.refunds !== 0 ? ` · after ${money(t.refunds)} refunds` : ''}`)}
       ${kpi('Amazon Fees', money(t.fees), C.red, 'referral + FBA')}
       ${kpi('Cost of Goods', money(-t.cost), C.yellow, 'your unit costs')}
-      ${kpi('Net Profit', money(t.profit), t.profit >= 0 ? C.brand900 : C.red, t.margin != null ? `${t.margin.toFixed(1)}% margin` : '')}
+      ${kpi('Product Profit', money(t.profit), t.profit >= 0 ? C.brand900 : C.red, t.margin != null ? `${t.margin.toFixed(1)}% margin` : '')}
     </div>
 
     ${missingNote}
+
+    ${acct.reimbursementsByType.length || acct.serviceFeesByType.length ? `
+    <div class="section-h">Account-level income &amp; costs <span style="font-weight:400;color:${C.slate400};font-size:11px">— not tied to any single sale</span></div>
+    <div class="acct">
+      <div class="acct-flow">
+        ${step('Product profit', money(t.profit), t.profit >= 0 ? C.brand900 : C.red)}
+        ${step('Reimbursements', money(t.reimbursements), C.green, '+')}
+        ${step('Account fees', money(t.serviceFees), C.red, '&minus;')}
+        <div class="acct-total">${step('Operating profit', money(t.operatingProfit), t.operatingProfit >= 0 ? C.brand900 : C.red)}</div>
+      </div>
+      <div class="acct-cols">
+        ${acctTable('Reimbursements', acct.reimbursementsByType, acct.reimbursements, 'Amazon paying you back for lost or damaged stock. Net of clawbacks, which reverse an earlier payout.')}
+        ${acctTable('Account fees', acct.serviceFeesByType, acct.serviceFees, 'Storage, inbound transport, removals and the monthly subscription.')}
+      </div>
+    </div>` : ''}
 
     ${rows.length ? `
     <div class="section-h">Top &amp; bottom performers</div>
@@ -191,7 +243,8 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
       Figures from Amazon SP-API settlement (Finances) data for the selected period. Revenue and units are net of refunds settled in the
       window, and Cost of Goods is charged only on units the buyer kept. Because Amazon posts a refund when it settles, a SKU refunded from an
       earlier period can show negative units. Sales tax Amazon collects and remits is excluded as a pass-through. Cost of Goods uses your saved
-      per-SKU unit costs. Amazon's finances data can lag a day or two behind the sale.
+      per-SKU unit costs. Reimbursements and account-level fees are reported separately from product profit because neither belongs to a
+      particular sale; operating profit combines them. Amazon's finances data can lag a day or two behind the sale.
     </div>
   </div>
   <script>window.addEventListener('load', function () { setTimeout(function () { try { window.print(); } catch (e) {} }, 250); });</script>

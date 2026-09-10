@@ -29,11 +29,31 @@ export interface ProfitTotals {
   margin: number | null;
   skuCount: number;
   missingCost: number;
+  /** Net of reimbursements and clawbacks — other income, not product margin. */
+  reimbursements: number;
+  /** Account-level operating costs (negative). */
+  serviceFees: number;
+  /** profit + reimbursements + serviceFees. */
+  operatingProfit: number;
+}
+
+export interface LineItem {
+  type: string;
+  amount: number;
+  count: number;
+}
+
+export interface AccountBreakdown {
+  reimbursements: number;
+  reimbursementsByType: LineItem[];
+  serviceFees: number;
+  serviceFeesByType: LineItem[];
 }
 
 export interface ProfitData {
   rows: ProfitRow[];
   totals: ProfitTotals;
+  account: AccountBreakdown;
   range: { from: string; to: string }; // ISO datetimes resolved by the server
 }
 
