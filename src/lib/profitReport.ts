@@ -1,4 +1,5 @@
 import type { ProfitData } from '../hooks/useProfit';
+import { buildRankings, formatMetric, type Ranking } from './profitRankings';
 
 // Brand palette (from brand.md) — inlined so the report window is self-contained.
 const C = {
@@ -32,10 +33,30 @@ function kpi(label: string, value: string, color: string, sub?: string): string 
     </div>`;
 }
 
+function rankCard(r: Ranking): string {
+  const accent = r.tone === 'good' ? C.green : C.red;
+  const body = r.entries.length
+    ? `<table class="rank-t">${r.entries.map((e, i) => `
+        <tr>
+          <td class="rank-n">${i + 1}</td>
+          <td class="rank-p" title="${esc(e.row.sku)}">${esc(e.row.productName || e.row.sku)}</td>
+          <td class="rank-v" style="color:${r.kind === 'money' && e.value < 0 ? C.red : C.brand900}">${esc(formatMetric(e.value, r.kind))}</td>
+          <td class="rank-s">${e.share != null ? esc(e.share.toFixed(1)) + '%' : ''}</td>
+        </tr>`).join('')}</table>`
+    : `<div class="rank-empty">${esc(r.emptyNote)}</div>`;
+  return `
+    <div class="rank-card" style="border-top-color:${accent}">
+      <div class="rank-title">${esc(r.title)}</div>
+      <div class="rank-note">${esc(r.note)}</div>
+      ${body}
+    </div>`;
+}
+
 export function buildProfitReportHtml(data: ProfitData, periodLabel: string, generatedAt: Date): string {
   const t = data.totals;
   const rows = data.rows;
   const genStr = generatedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const { rankings, concentration } = buildRankings(rows, t);
 
   const bodyRows = rows.map((r) => `
     <tr>
@@ -71,6 +92,21 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
   .kpi-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
   .kpi-sub { font-size: 10px; color: ${C.slate400}; margin-top: 2px; }
   .note { background: #fefce8; border: 1px solid #fde68a; color: #854d0e; font-size: 11px; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; }
+  .section-h { font-size: 13px; font-weight: 700; color: ${C.brand900}; margin: 4px 0 10px; }
+  .conc { font-size: 10px; color: ${C.slate500}; background: ${C.surface50}; border: 1px solid ${C.surface200}; border-radius: 6px; padding: 7px 10px; margin-bottom: 12px; }
+  .conc strong { color: ${C.brand900}; }
+  .ranks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+  .rank-card { border: 1px solid ${C.surface200}; border-top-width: 3px; border-radius: 8px; padding: 9px 11px 10px; break-inside: avoid; }
+  .rank-title { font-size: 11px; font-weight: 700; color: ${C.brand900}; }
+  .rank-note { font-size: 9px; color: ${C.slate400}; margin-bottom: 6px; }
+  .rank-t { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .rank-t td { padding: 3px 0; border-bottom: 1px solid ${C.surface100}; vertical-align: top; }
+  .rank-t tr:last-child td { border-bottom: none; }
+  .rank-n { width: 12px; color: ${C.slate400}; font-size: 9px; }
+  .rank-p { max-width: 105px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-v { text-align: right; font-weight: 700; white-space: nowrap; padding-left: 6px !important; }
+  .rank-s { text-align: right; width: 30px; color: ${C.slate400}; font-size: 9px; white-space: nowrap; }
+  .rank-empty { font-size: 9px; color: ${C.slate400}; font-style: italic; padding: 6px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
   thead th { text-align: left; text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; color: ${C.slate500}; background: ${C.surface50}; padding: 7px 8px; border-bottom: 1px solid ${C.surface200}; }
   th.num, td.num { text-align: right; }
@@ -118,6 +154,12 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     </div>
 
     ${missingNote}
+
+    ${rows.length ? `
+    <div class="section-h">Top &amp; bottom performers</div>
+    ${concentration.share != null ? `<div class="conc">Top ${concentration.skus} SKUs drive <strong>${concentration.share.toFixed(1)}%</strong> of revenue${concentration.label ? ` — ${esc(concentration.label)}` : ''}.</div>` : ''}
+    <div class="ranks">${rankings.map(rankCard).join('')}</div>
+    <div class="section-h">Full breakdown by SKU</div>` : ''}
 
     <table>
       <thead>

@@ -2,6 +2,7 @@ import { useProfit } from '../../hooks/useProfit';
 import { RefreshCw, TrendingUp, AlertCircle, Info, Download } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, subDays, isSameDay } from 'date-fns';
 import { openProfitReport } from '../../lib/profitReport';
+import { PerformersGrid } from './PerformersGrid';
 
 const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -186,6 +187,9 @@ export function ProfitView() {
           </p>
         </div>
       )}
+
+      {/* Best / worst performers */}
+      {t && <PerformersGrid rows={rows} totals={t} />}
 
       {/* Table */}
       <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] overflow-hidden">
