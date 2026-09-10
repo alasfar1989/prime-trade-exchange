@@ -1,6 +1,10 @@
-import { Trophy, TrendingDown } from 'lucide-react';
+import { Trophy, TrendingDown, Undo2 } from 'lucide-react';
 import { buildRankings, formatMetric, type Ranking } from '../../lib/profitRankings';
 import type { ProfitRow, ProfitTotals } from '../../hooks/useProfit';
+
+function money(n: number): string {
+  return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function RankCard({ ranking }: { ranking: Ranking }) {
   const good = ranking.tone === 'good';
@@ -40,7 +44,7 @@ function RankCard({ ranking }: { ranking: Ranking }) {
 
 export function PerformersGrid({ rows, totals }: { rows: ProfitRow[]; totals: ProfitTotals }) {
   if (rows.length === 0) return null;
-  const { rankings, concentration } = buildRankings(rows, totals);
+  const { rankings, concentration, returns } = buildRankings(rows, totals);
   const winners = rankings.filter((r) => r.tone === 'good');
   const losers = rankings.filter((r) => r.tone === 'bad');
 
@@ -51,6 +55,21 @@ export function PerformersGrid({ rows, totals }: { rows: ProfitRow[]; totals: Pr
           Top <strong className="text-brand-900">{concentration.skus}</strong> SKUs drive{' '}
           <strong className="text-brand-900">{concentration.share.toFixed(1)}%</strong> of revenue
           {concentration.label && <span className="text-slate-400"> — {concentration.label}</span>}
+        </div>
+      )}
+
+      {returns.rate != null && returns.units > 0 && (
+        <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] px-5 py-3.5 text-sm text-slate-600 flex items-start gap-2.5">
+          <Undo2 size={16} className="text-status-red mt-0.5 shrink-0" />
+          <p>
+            Returns took <strong className="text-status-red">{returns.rate.toFixed(1)}%</strong> of gross revenue
+            {' '}({money(returns.amount)} over {returns.units.toLocaleString()} units).
+            {returns.worst.length > 0 && (
+              <span className="text-slate-400">
+                {' '}Worst rates: {returns.worst.map((w) => `${w.row.productName || w.row.sku} (${w.rate.toFixed(0)}%)`).join(', ')}.
+              </span>
+            )}
+          </p>
         </div>
       )}
 

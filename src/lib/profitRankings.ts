@@ -26,8 +26,18 @@ export interface Ranking {
   emptyNote: string;
 }
 
+export interface ReturnsSummary {
+  /** Refunded principal as a percent of gross revenue. */
+  rate: number | null;
+  amount: number; // negative
+  units: number;
+  /** Worst return rates by unit, above the volume floor. */
+  worst: Array<{ row: ProfitRow; rate: number }>;
+}
+
 export interface ProfitRankings {
   rankings: Ranking[];
+  returns: ReturnsSummary;
   /** Top-3 SKUs' combined share of revenue — concentration risk. */
   concentration: { share: number | null; skus: number; label: string };
   costedCount: number;
@@ -35,6 +45,8 @@ export interface ProfitRankings {
 }
 
 const LIMIT = 5;
+/** Below this many gross units a return rate is noise — one return of one sale is 100%. */
+const RETURN_RATE_MIN_UNITS = 5;
 
 const pct = (part: number, whole: number): number | null =>
   whole !== 0 ? (part / whole) * 100 : null;
@@ -81,7 +93,12 @@ export function buildRankings(rows: ProfitRow[], totals: ProfitTotals): ProfitRa
   const margin = (r: ProfitRow) => r.margin ?? 0;
 
   const byUnitsDesc = ranked(rows, units, 'desc');
-  const byUnitsAsc = ranked(rows, units, 'asc');
+  // A SKU that shipped nothing this window and only had an earlier sale's refund
+  // settle lands on negative net units. That is a returns artifact, not sales
+  // velocity, so it is kept out of "slowest movers" (it still shows up under
+  // losing money, and the returns strip covers the refund story).
+  const shipped = rows.filter((r) => r.unitsSold + r.unitsRefunded > 0);
+  const byUnitsAsc = ranked(shipped, units, 'asc');
   const byRevenueDesc = ranked(rows, revenue, 'desc');
   // Only actual earners belong on a "most profitable" list — without this a
   // period with fewer than five winners pads the list out with loss-makers.
@@ -99,7 +116,7 @@ export function buildRankings(rows: ProfitRow[], totals: ProfitTotals): ProfitRa
     {
       key: 'best-sellers',
       title: 'Best sellers',
-      note: 'Most units sold',
+      note: 'Most units sold, net of returns',
       kind: 'units',
       tone: 'good',
       entries: entries(byUnitsDesc, units, totals.unitsSold),
@@ -130,11 +147,11 @@ export function buildRankings(rows: ProfitRow[], totals: ProfitTotals): ProfitRa
     {
       key: 'slowest-movers',
       title: 'Slowest movers',
-      note: 'Fewest units sold',
+      note: 'Fewest units sold, net of returns',
       kind: 'units',
       tone: 'bad',
       entries: entries(byUnitsAsc, units, totals.unitsSold),
-      emptyNote: 'No units sold in this period.',
+      emptyNote: 'No SKU shipped units in this period.',
     },
     {
       key: 'thinnest-margins',
@@ -156,11 +173,28 @@ export function buildRankings(rows: ProfitRow[], totals: ProfitTotals): ProfitRa
     },
   ];
 
+  const refundedUnits = rows.reduce((s, r) => s + r.unitsRefunded, 0);
+  const worstReturns = rows
+    .map((r) => {
+      const grossUnits = r.unitsSold + r.unitsRefunded;
+      return { row: r, rate: grossUnits > 0 ? (r.unitsRefunded / grossUnits) * 100 : 0, grossUnits };
+    })
+    .filter((x) => x.rate > 0 && x.grossUnits >= RETURN_RATE_MIN_UNITS)
+    .sort((a, b) => b.rate - a.rate || a.row.sku.localeCompare(b.row.sku))
+    .slice(0, 3)
+    .map(({ row, rate }) => ({ row, rate }));
+
   const top3 = byRevenueDesc.slice(0, 3);
   const top3Revenue = top3.reduce((s, r) => s + r.revenue, 0);
 
   return {
     rankings,
+    returns: {
+      rate: pct(Math.abs(totals.refunds), totals.grossRevenue),
+      amount: totals.refunds,
+      units: refundedUnits,
+      worst: worstReturns,
+    },
     concentration: {
       share: pct(top3Revenue, totals.revenue),
       skus: top3.length,

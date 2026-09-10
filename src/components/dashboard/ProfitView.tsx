@@ -155,9 +155,14 @@ export function ProfitView() {
       {t && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Revenue</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Net Revenue</p>
             <p className="text-3xl font-bold text-status-green mt-2">{money(t.revenue)}</p>
             <p className="text-xs text-slate-400 mt-1">{t.unitsSold.toLocaleString()} units · {t.skuCount} SKUs</p>
+            {t.refunds !== 0 && (
+              <p className="text-xs text-status-red mt-0.5">
+                after {money(t.refunds)} refunds ({t.unitsRefunded.toLocaleString()} units)
+              </p>
+            )}
           </div>
           <div className="bg-surface-0 rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Amazon Fees</p>
@@ -206,6 +211,7 @@ export function ProfitView() {
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3">SKU</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Units</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Revenue</th>
+                <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Refunds</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Amazon Fees</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Cost</th>
                 <th className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 text-right">Profit</th>
@@ -217,8 +223,14 @@ export function ProfitView() {
                 <tr key={r.sku} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
                   <td className="px-4 py-3 text-sm text-brand-900 max-w-[240px] truncate">{r.productName || <span className="text-slate-400 italic" title="Sold-out or merchant-fulfilled — no listing name found">{r.sku}</span>}</td>
                   <td className="px-4 py-3 text-sm font-mono text-slate-500">{r.sku}</td>
-                  <td className="px-4 py-3 text-sm text-brand-900 text-right">{r.unitsSold}</td>
+                  <td className="px-4 py-3 text-sm text-brand-900 text-right">
+                    {r.unitsSold}
+                    {r.unitsRefunded > 0 && <span className="text-xs text-slate-400" title={`${r.unitsRefunded} returned`}> (−{r.unitsRefunded})</span>}
+                  </td>
                   <td className="px-4 py-3 text-sm text-status-green text-right">{money(r.revenue)}</td>
+                  <td className="px-4 py-3 text-sm text-right">
+                    {r.refunds !== 0 ? <span className="text-status-red">{money(r.refunds)}</span> : <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-sm text-status-red text-right">{money(r.fees)}</td>
                   <td className="px-4 py-3 text-sm text-right">
                     {r.hasCost ? (
@@ -233,7 +245,7 @@ export function ProfitView() {
               ))}
               {rows.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400">
                     No sales with settlement data in this range yet. Amazon's finances data can lag a day or two behind the sale.
                   </td>
                 </tr>

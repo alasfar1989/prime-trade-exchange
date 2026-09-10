@@ -4,8 +4,11 @@ import { fetchApi } from '../lib/api';
 export interface ProfitRow {
   sku: string;
   productName: string | null;
-  unitsSold: number;
-  revenue: number;
+  unitsSold: number;     // net of refunds; can go negative when a refund settles
+  unitsRefunded: number; // units returned in the window (positive)
+  revenue: number;       // net of refunds
+  grossRevenue: number;  // before refunds
+  refunds: number;       // principal returned to buyers (negative)
   fees: number; // negative
   unitCost: number | null;
   cost: number;
@@ -16,7 +19,10 @@ export interface ProfitRow {
 
 export interface ProfitTotals {
   unitsSold: number;
+  unitsRefunded: number;
   revenue: number;
+  grossRevenue: number;
+  refunds: number;
   fees: number;
   cost: number;
   profit: number;

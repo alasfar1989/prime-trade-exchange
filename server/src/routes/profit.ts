@@ -84,13 +84,18 @@ router.get('/profit', async (req, res, next) => {
       saveNames(fetched).catch(() => {});
     }
 
-    const totals = { unitsSold: 0, revenue: 0, fees: 0, cost: 0, profit: 0, missingCost: 0 };
+    const totals = { unitsSold: 0, unitsRefunded: 0, revenue: 0, grossRevenue: 0, refunds: 0, fees: 0, cost: 0, profit: 0, missingCost: 0 };
     const rows = finances.map((f) => {
       const unitCost = costs.get(f.sku);
+      // f.unitsSold and f.revenue are already net of refunds, so COGS is charged
+      // on units the buyer actually kept.
       const cost = unitCost != null ? unitCost * f.unitsSold : 0;
       const profit = f.revenue + f.fees - cost; // fees are negative
       totals.unitsSold += f.unitsSold;
+      totals.unitsRefunded += f.unitsRefunded;
       totals.revenue += f.revenue;
+      totals.grossRevenue += f.grossRevenue;
+      totals.refunds += f.refunds;
       totals.fees += f.fees;
       totals.cost += cost;
       totals.profit += profit;
@@ -99,7 +104,10 @@ router.get('/profit', async (req, res, next) => {
         sku: f.sku,
         productName: nameBySku.get(f.sku) ?? null,
         unitsSold: f.unitsSold,
+        unitsRefunded: f.unitsRefunded,
         revenue: round(f.revenue),
+        grossRevenue: round(f.grossRevenue),
+        refunds: round(f.refunds),
         fees: round(f.fees),
         unitCost: unitCost ?? null,
         cost: round(cost),
@@ -116,7 +124,10 @@ router.get('/profit', async (req, res, next) => {
         rows,
         totals: {
           unitsSold: totals.unitsSold,
+          unitsRefunded: totals.unitsRefunded,
           revenue: round(totals.revenue),
+          grossRevenue: round(totals.grossRevenue),
+          refunds: round(totals.refunds),
           fees: round(totals.fees),
           cost: round(totals.cost),
           profit: round(totals.profit),

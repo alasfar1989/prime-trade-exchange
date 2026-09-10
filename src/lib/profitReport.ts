@@ -56,14 +56,15 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
   const t = data.totals;
   const rows = data.rows;
   const genStr = generatedAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  const { rankings, concentration } = buildRankings(rows, t);
+  const { rankings, concentration, returns } = buildRankings(rows, t);
 
   const bodyRows = rows.map((r) => `
     <tr>
       <td class="prod">${r.productName ? esc(r.productName) : `<span class="muted">${esc(r.sku)}</span>`}</td>
       <td class="mono">${esc(r.sku)}</td>
-      <td class="num">${r.unitsSold.toLocaleString()}</td>
+      <td class="num">${r.unitsSold.toLocaleString()}${r.unitsRefunded > 0 ? `<span class="muted"> (&minus;${r.unitsRefunded})</span>` : ''}</td>
       <td class="num pos">${money(r.revenue)}</td>
+      <td class="num neg">${r.refunds !== 0 ? money(r.refunds) : '<span class="muted">—</span>'}</td>
       <td class="num neg">${money(r.fees)}</td>
       <td class="num">${r.hasCost ? money(-r.cost) : '<span class="muted">—</span>'}</td>
       <td class="num strong" style="color:${r.profit >= 0 ? C.brand900 : C.red}">${money(r.profit)}</td>
@@ -95,6 +96,8 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
   .section-h { font-size: 13px; font-weight: 700; color: ${C.brand900}; margin: 4px 0 10px; }
   .conc { font-size: 10px; color: ${C.slate500}; background: ${C.surface50}; border: 1px solid ${C.surface200}; border-radius: 6px; padding: 7px 10px; margin-bottom: 12px; }
   .conc strong { color: ${C.brand900}; }
+  .conc-bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .conc-bad strong { color: ${C.red}; }
   .ranks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
   .rank-card { border: 1px solid ${C.surface200}; border-top-width: 3px; border-radius: 8px; padding: 9px 11px 10px; break-inside: avoid; }
   .rank-title { font-size: 11px; font-weight: 700; color: ${C.brand900}; }
@@ -147,7 +150,7 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     </div>
 
     <div class="kpis">
-      ${kpi('Revenue', money(t.revenue), C.green, `${t.unitsSold.toLocaleString()} units · ${t.skuCount} SKUs`)}
+      ${kpi('Net Revenue', money(t.revenue), C.green, `${t.unitsSold.toLocaleString()} units · ${t.skuCount} SKUs${t.refunds !== 0 ? ` · after ${money(t.refunds)} refunds` : ''}`)}
       ${kpi('Amazon Fees', money(t.fees), C.red, 'referral + FBA')}
       ${kpi('Cost of Goods', money(-t.cost), C.yellow, 'your unit costs')}
       ${kpi('Net Profit', money(t.profit), t.profit >= 0 ? C.brand900 : C.red, t.margin != null ? `${t.margin.toFixed(1)}% margin` : '')}
@@ -158,6 +161,7 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     ${rows.length ? `
     <div class="section-h">Top &amp; bottom performers</div>
     ${concentration.share != null ? `<div class="conc">Top ${concentration.skus} SKUs drive <strong>${concentration.share.toFixed(1)}%</strong> of revenue${concentration.label ? ` — ${esc(concentration.label)}` : ''}.</div>` : ''}
+    ${returns.rate != null && returns.units > 0 ? `<div class="conc conc-bad">Returns took <strong>${returns.rate.toFixed(1)}%</strong> of gross revenue (${esc(money(returns.amount))} over ${returns.units.toLocaleString()} units).${returns.worst.length ? ` Worst rates: ${esc(returns.worst.map((w) => `${w.row.productName || w.row.sku} (${w.rate.toFixed(0)}%)`).join(', '))}.` : ''}</div>` : ''}
     <div class="ranks">${rankings.map(rankCard).join('')}</div>
     <div class="section-h">Full breakdown by SKU</div>` : ''}
 
@@ -165,15 +169,16 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
       <thead>
         <tr>
           <th>Product</th><th>SKU</th><th class="num">Units</th><th class="num">Revenue</th>
-          <th class="num">Amazon Fees</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th>
+          <th class="num">Refunds</th><th class="num">Amazon Fees</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th>
         </tr>
       </thead>
-      <tbody>${bodyRows || `<tr><td colspan="8" style="text-align:center;padding:24px;color:${C.slate400}">No sales with settlement data in this period.</td></tr>`}</tbody>
+      <tbody>${bodyRows || `<tr><td colspan="9" style="text-align:center;padding:24px;color:${C.slate400}">No sales with settlement data in this period.</td></tr>`}</tbody>
       <tfoot>
         <tr>
           <td colspan="2">Total · ${t.skuCount} SKUs</td>
           <td class="num">${t.unitsSold.toLocaleString()}</td>
           <td class="num pos">${money(t.revenue)}</td>
+          <td class="num neg">${money(t.refunds)}</td>
           <td class="num neg">${money(t.fees)}</td>
           <td class="num" style="color:${C.yellow}">${money(-t.cost)}</td>
           <td class="num" style="color:${t.profit >= 0 ? C.brand900 : C.red}">${money(t.profit)}</td>
@@ -183,8 +188,10 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     </table>
 
     <div class="foot">
-      Figures from Amazon SP-API settlement (Finances) data for shipped orders in the selected period. Refunds are not deducted.
-      Cost of Goods uses your saved per-SKU unit costs. Amazon's finances data can lag a day or two behind the sale.
+      Figures from Amazon SP-API settlement (Finances) data for the selected period. Revenue and units are net of refunds settled in the
+      window, and Cost of Goods is charged only on units the buyer kept. Because Amazon posts a refund when it settles, a SKU refunded from an
+      earlier period can show negative units. Sales tax Amazon collects and remits is excluded as a pass-through. Cost of Goods uses your saved
+      per-SKU unit costs. Amazon's finances data can lag a day or two behind the sale.
     </div>
   </div>
   <script>window.addEventListener('load', function () { setTimeout(function () { try { window.print(); } catch (e) {} }, 250); });</script>
