@@ -32,23 +32,22 @@ export interface Order {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// getOrders has a tiny quota (~1 req/min, burst 20). One short retry covers a
-// blip; a drained bucket won't recover in-request, so fail fast and let the
-// route serve its stale cache instead.
+// getOrders has a tiny quota: ~1 req/min refill, burst 20. When the bucket is
+// drained, only patience works — wait out the refill (~65s) per page rather
+// than failing the whole multi-page pull. Callers are cached/single-flighted,
+// so at most one pull pays this cost and everyone else shares the result.
 async function getOrdersPage(params: Record<string, string>) {
-  try {
-    return await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
-      '/orders/v0/orders',
-      params
-    );
-  } catch (err) {
-    const status = (err as { response?: { status?: number } })?.response?.status;
-    if (status !== 429) throw err;
-    await sleep(2000);
-    return await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
-      '/orders/v0/orders',
-      params
-    );
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
+        '/orders/v0/orders',
+        params
+      );
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status !== 429 || attempt >= 3) throw err;
+      await sleep(65_000);
+    }
   }
 }
 

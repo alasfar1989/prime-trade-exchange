@@ -11,6 +11,26 @@ const CACHE_TTL = 10 * 60 * 1000;
 // starting their own pagination run against the rate limit.
 const inflight = new Map<string, Promise<Order[]>>();
 
+// Deploys restart the process with an empty cache, and the first pull can take
+// minutes if the quota bucket is drained. Start it at boot so browsers find a
+// warm cache instead of paying that wait.
+export function warmOrdersCache(days = 30): void {
+  const cacheKey = `orders:${days}`;
+  if (cacheGet(cacheKey) || inflight.has(cacheKey)) return;
+  const pull = fetchOrders(days);
+  inflight.set(cacheKey, pull);
+  pull.then(
+    (orders) => {
+      cacheSet(cacheKey, orders, CACHE_TTL);
+      inflight.delete(cacheKey);
+    },
+    (err) => {
+      inflight.delete(cacheKey);
+      console.error('Orders cache warm-up failed:', (err as Error)?.message ?? err);
+    }
+  );
+}
+
 router.get('/orders', async (req, res, next) => {
   const days = parseInt(req.query.days as string) || 30;
   const cacheKey = `orders:${days}`;

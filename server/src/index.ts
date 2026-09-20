@@ -10,7 +10,7 @@ import healthRoutes from './routes/health.js';
 import authRoutes from './routes/auth.js';
 import shipmentRoutes from './routes/shipments.js';
 import inventoryRoutes from './routes/inventory.js';
-import orderRoutes from './routes/orders.js';
+import orderRoutes, { warmOrdersCache } from './routes/orders.js';
 import costRoutes from './routes/costs.js';
 import profitRoutes from './routes/profit.js';
 import expenseRoutes from './routes/expenses.js';
@@ -74,5 +74,6 @@ initDb()
   .finally(() => {
     app.listen(env.PORT, () => {
       console.log(`Prime Trade Exchange API running on port ${env.PORT}`);
+      warmOrdersCache();
     });
   });
