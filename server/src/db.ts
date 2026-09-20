@@ -36,6 +36,20 @@ export async function initDb(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Snapshot of Amazon orders so a fresh deploy never has to re-pull the
+  // whole month from getOrders (~28 pages against a 1-req/min quota).
+  // Refreshes only pull orders changed since the last sync.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders_snapshot (
+      order_id         TEXT PRIMARY KEY,
+      payload          JSONB NOT NULL,
+      purchase_date    TIMESTAMPTZ NOT NULL,
+      last_update_date TIMESTAMPTZ NOT NULL
+    )
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_orders_snapshot_purchase ON orders_snapshot(purchase_date DESC)'
+  );
   // Operating expenses the user logs by hand — shipping supplies, software,
   // prep services, storage overages and so on. Deliberately NOT part of the
   // profit calculation: /api/profit stays revenue - Amazon fees - COGS.

@@ -51,17 +51,30 @@ async function getOrdersPage(params: Record<string, string>) {
   }
 }
 
-export async function fetchOrders(daysBack = 30): Promise<Order[]> {
-  const createdAfter = format(subDays(new Date(), daysBack), "yyyy-MM-dd'T'HH:mm:ss'Z'");
+function mapOrder(o: SpOrder): Order {
+  return {
+    orderId: o.AmazonOrderId,
+    purchaseDate: o.PurchaseDate,
+    lastUpdateDate: o.LastUpdateDate,
+    status: o.OrderStatus,
+    totalAmount: o.OrderTotal ? parseFloat(o.OrderTotal.Amount) : 0,
+    currency: o.OrderTotal?.CurrencyCode || 'USD',
+    itemsShipped: o.NumberOfItemsShipped || 0,
+    itemsUnshipped: o.NumberOfItemsUnshipped || 0,
+    fulfillmentChannel: o.FulfillmentChannel || '',
+    shipCity: o.ShippingAddress?.City || '',
+    shipState: o.ShippingAddress?.StateOrRegion || '',
+  };
+}
 
+async function pullOrders(baseParams: Record<string, string>): Promise<Order[]> {
   const allOrders: SpOrder[] = [];
   let nextToken: string | undefined;
 
-  // Paginate through all orders
   do {
     const params: Record<string, string> = nextToken
       ? { NextToken: nextToken }
-      : { MarketplaceIds: env.SP_API.MARKETPLACE_ID, CreatedAfter: createdAfter };
+      : { MarketplaceIds: env.SP_API.MARKETPLACE_ID, ...baseParams };
 
     const res = await getOrdersPage(params);
 
@@ -71,20 +84,20 @@ export async function fetchOrders(daysBack = 30): Promise<Order[]> {
 
   // Sort newest first
   return allOrders
-    .map((o) => ({
-      orderId: o.AmazonOrderId,
-      purchaseDate: o.PurchaseDate,
-      lastUpdateDate: o.LastUpdateDate,
-      status: o.OrderStatus,
-      totalAmount: o.OrderTotal ? parseFloat(o.OrderTotal.Amount) : 0,
-      currency: o.OrderTotal?.CurrencyCode || 'USD',
-      itemsShipped: o.NumberOfItemsShipped || 0,
-      itemsUnshipped: o.NumberOfItemsUnshipped || 0,
-      fulfillmentChannel: o.FulfillmentChannel || '',
-      shipCity: o.ShippingAddress?.City || '',
-      shipState: o.ShippingAddress?.StateOrRegion || '',
-    }))
+    .map(mapOrder)
     .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime());
+}
+
+export function fetchOrders(daysBack = 30): Promise<Order[]> {
+  const createdAfter = format(subDays(new Date(), daysBack), "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  return pullOrders({ CreatedAfter: createdAfter });
+}
+
+// Orders created OR changed (shipped, refunded, cancelled…) in the window —
+// the delta pull that keeps the DB snapshot current without re-reading the
+// whole month.
+export function fetchOrdersUpdatedBetween(afterISO: string, beforeISO: string): Promise<Order[]> {
+  return pullOrders({ LastUpdatedAfter: afterISO, LastUpdatedBefore: beforeISO });
 }
 
 interface SpOrderItem {

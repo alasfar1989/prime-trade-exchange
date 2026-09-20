@@ -5,7 +5,7 @@ import { cacheStats } from '../cache/memoryCache.js';
 const router = Router();
 
 // Bumped on deploy-sensitive changes so we can confirm Railway picked them up.
-const BUILD_TAG = '2026-09-20-swr-both';
+const BUILD_TAG = '2026-09-20-orders-db';
 
 router.get('/health', (_req, res) => {
   res.json({
