@@ -4,12 +4,45 @@ import { getAllCosts } from '../services/costs.js';
 import { fetchInventory } from '../services/inventory.js';
 import { getCachedNames, saveNames } from '../services/names.js';
 import { fetchOrderItems } from '../services/orders.js';
-import { cacheGet, cacheSet } from '../cache/memoryCache.js';
+import { cacheGet, cacheGetStale, cacheSet } from '../cache/memoryCache.js';
 
 const router = Router();
 const FIN_TTL = 5 * 60 * 1000; // cache the (slow, rate-limited) SP-API pull for 5 min
+// Numbers this recent are shown immediately while a fresh pull runs in the
+// background; older stale data only serves as a fallback when the pull fails.
+const SWR_MAX_AGE = 6 * 60 * 60 * 1000;
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+// Concurrent viewers of the same window share one finances pull.
+const finInflight = new Map<string, Promise<FinancesResult>>();
+
+function startFinancesPull(
+  cacheKey: string,
+  staleKey: string,
+  fromDate: Date,
+  toDate: Date
+): Promise<FinancesResult> {
+  let pull = finInflight.get(cacheKey);
+  if (!pull) {
+    pull = fetchFinances(fromDate, toDate);
+    finInflight.set(cacheKey, pull);
+    pull.then(
+      (r) => {
+        cacheSet(cacheKey, r, FIN_TTL);
+        // The quantized cacheKey changes every 5 min; the staleKey is stable
+        // per window shape so the last good pull stays findable.
+        cacheSet(staleKey, r, FIN_TTL);
+        finInflight.delete(cacheKey);
+      },
+      (err) => {
+        finInflight.delete(cacheKey);
+        console.error('Finances pull failed:', (err as Error)?.message ?? err);
+      }
+    );
+  }
+  return pull;
+}
 
 // GET /api/profit?days=30  or  /api/profit?from=2026-06-01&to=2026-06-30
 router.get('/profit', async (req, res, next) => {
@@ -51,15 +84,38 @@ router.get('/profit', async (req, res, next) => {
     // Finances come from SP-API (cached by range); costs come from the DB
     // (always fresh, so a cost edit shows up immediately without re-hitting Amazon).
     const cacheKey = `finances:${fromISO}:${toISO}`;
+    // Windows ending "now" are the same rolling window every 5 minutes — key
+    // the stale copy by span so the last good pull survives bucket changes.
+    const staleKey = endsAtNow
+      ? `finances-stale:rolling:${Math.round((toDate.getTime() - fromDate.getTime()) / 86400_000)}`
+      : `finances-stale:${fromISO}:${toISO}`;
     let result: FinancesResult;
     let source: 'sp-api' | 'cache' = 'sp-api';
+    let dataAsOf = new Date().toISOString();
     const cached = cacheGet<FinancesResult>(cacheKey);
     if (cached) {
-      result = (await cached.data) as FinancesResult;
+      result = cached.data;
       source = 'cache';
+      dataAsOf = cached.cachedAt;
     } else {
-      result = await fetchFinances(fromDate, toDate);
-      cacheSet(cacheKey, result, FIN_TTL);
+      const pull = startFinancesPull(cacheKey, staleKey, fromDate, toDate);
+      const stale = cacheGetStale<FinancesResult>(staleKey);
+      const staleAge = stale ? Date.now() - Date.parse(stale.cachedAt) : Infinity;
+      if (stale && staleAge < SWR_MAX_AGE) {
+        // Serve recent numbers instantly; the refresh keeps running behind us.
+        result = stale.data;
+        source = 'cache';
+        dataAsOf = stale.cachedAt;
+      } else {
+        try {
+          result = await pull;
+        } catch (err) {
+          if (!stale) throw err;
+          result = stale.data;
+          source = 'cache';
+          dataAsOf = stale.cachedAt;
+        }
+      }
     }
     const finances = result.skus;
     const account = result.account;
