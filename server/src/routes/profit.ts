@@ -22,9 +22,10 @@ router.get('/profit', async (req, res, next) => {
     // otherwise fall back to the trailing `days` window.
     const now = new Date();
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    const explicitRange = !!(fromStr && toStr && dateRe.test(fromStr) && dateRe.test(toStr));
     let fromDate: Date;
     let toDate: Date;
-    if (fromStr && toStr && dateRe.test(fromStr) && dateRe.test(toStr)) {
+    if (explicitRange) {
       fromDate = new Date(`${fromStr}T00:00:00.000Z`);
       toDate = new Date(`${toStr}T23:59:59.999Z`);
     } else {
@@ -33,7 +34,16 @@ router.get('/profit', async (req, res, next) => {
     }
     // The Finances API rejects PostedBefore within ~2 min of now — clamp it.
     const maxTo = new Date(now.getTime() - 3 * 60_000);
-    if (toDate > maxTo) toDate = maxTo;
+    const endsAtNow = toDate > maxTo;
+    if (endsAtNow) toDate = maxTo;
+    // Windows that end "now" get quantized to 5-minute steps. Without this the
+    // cache key below embeds the current time to the millisecond, so it never
+    // repeats and the slow finances pull runs on EVERY request.
+    if (endsAtNow) {
+      const QUANT = 5 * 60_000;
+      toDate = new Date(Math.floor(toDate.getTime() / QUANT) * QUANT);
+      if (!explicitRange) fromDate = new Date(toDate.getTime() - days * 86400_000);
+    }
     if (fromDate >= toDate) fromDate = new Date(toDate.getTime() - 86400_000);
     const fromISO = fromDate.toISOString();
     const toISO = toDate.toISOString();

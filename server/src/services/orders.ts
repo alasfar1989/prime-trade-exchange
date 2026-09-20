@@ -30,6 +30,28 @@ export interface Order {
   shipState: string;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// getOrders has a tiny quota (~1 req/min, burst 20). One short retry covers a
+// blip; a drained bucket won't recover in-request, so fail fast and let the
+// route serve its stale cache instead.
+async function getOrdersPage(params: Record<string, string>) {
+  try {
+    return await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
+      '/orders/v0/orders',
+      params
+    );
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status !== 429) throw err;
+    await sleep(2000);
+    return await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
+      '/orders/v0/orders',
+      params
+    );
+  }
+}
+
 export async function fetchOrders(daysBack = 30): Promise<Order[]> {
   const createdAfter = format(subDays(new Date(), daysBack), "yyyy-MM-dd'T'HH:mm:ss'Z'");
 
@@ -42,10 +64,7 @@ export async function fetchOrders(daysBack = 30): Promise<Order[]> {
       ? { NextToken: nextToken }
       : { MarketplaceIds: env.SP_API.MARKETPLACE_ID, CreatedAfter: createdAfter };
 
-    const res = await spApiGet<{ payload: { Orders: SpOrder[]; NextToken?: string } }>(
-      '/orders/v0/orders',
-      params
-    );
+    const res = await getOrdersPage(params);
 
     allOrders.push(...(res.payload?.Orders || []));
     nextToken = res.payload?.NextToken;
