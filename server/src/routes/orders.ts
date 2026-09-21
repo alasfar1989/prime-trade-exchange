@@ -26,6 +26,14 @@ const OVERLAP_MS = 10 * 60_000;
 
 const inflight = new Map<string, Promise<Order[]>>();
 
+// Surfaced on /api/health so sync failures are visible without Railway logs.
+export const ordersDebug = {
+  lastSyncAt: null as string | null,
+  lastSyncCount: null as number | null,
+  lastError: null as string | null,
+  lastErrorAt: null as string | null,
+};
+
 async function refreshOrders(days: number): Promise<Order[]> {
   if (!hasOrdersDb()) return fetchOrders(days); // no DB — direct pull, old behavior
 
@@ -58,10 +66,17 @@ function startOrdersPull(days: number): Promise<Order[]> {
       (orders) => {
         cacheSet(cacheKey, orders, CACHE_TTL);
         inflight.delete(cacheKey);
+        ordersDebug.lastSyncAt = new Date().toISOString();
+        ordersDebug.lastSyncCount = orders.length;
       },
       (err) => {
         inflight.delete(cacheKey);
-        console.error('Orders refresh failed:', (err as Error)?.message ?? err);
+        const e = err as { message?: string; response?: { status?: number; data?: unknown } };
+        ordersDebug.lastError = e?.response?.status
+          ? `HTTP ${e.response.status}: ${JSON.stringify(e.response.data ?? '').slice(0, 300)}`
+          : String(e?.message ?? err).slice(0, 300);
+        ordersDebug.lastErrorAt = new Date().toISOString();
+        console.error('Orders refresh failed:', ordersDebug.lastError);
       }
     );
   }
