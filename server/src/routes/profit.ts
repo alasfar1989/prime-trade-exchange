@@ -153,6 +153,9 @@ router.get('/profit', async (req, res, next) => {
     }
 
     const totals = { unitsSold: 0, unitsRefunded: 0, revenue: 0, grossRevenue: 0, refunds: 0, fees: 0, cost: 0, profit: 0, missingCost: 0 };
+    // Per-marketplace rollup. Unit cost is per SKU (what you paid, in USD), so a
+    // slice is charged that cost on its own net units, the same as the row.
+    const byMkt = new Map<string, { marketplace: string; unitsSold: number; revenue: number; fees: number; cost: number; profit: number; skus: number }>();
     const rows = finances.map((f) => {
       const unitCost = costs.get(f.sku);
       // f.unitsSold and f.revenue are already net of refunds, so COGS is charged
@@ -168,6 +171,19 @@ router.get('/profit', async (req, res, next) => {
       totals.cost += cost;
       totals.profit += profit;
       if (unitCost == null) totals.missingCost += 1;
+      const marketplaces = Object.entries(f.byMarketplace ?? {}).map(([marketplace, m]) => {
+        const sliceCost = unitCost != null ? unitCost * m.unitsSold : 0;
+        const sliceProfit = m.revenue + m.fees - sliceCost;
+        const t = byMkt.get(marketplace) || { marketplace, unitsSold: 0, revenue: 0, fees: 0, cost: 0, profit: 0, skus: 0 };
+        t.unitsSold += m.unitsSold;
+        t.revenue += m.revenue;
+        t.fees += m.fees;
+        t.cost += sliceCost;
+        t.profit += sliceProfit;
+        t.skus += 1;
+        byMkt.set(marketplace, t);
+        return { marketplace, unitsSold: m.unitsSold, revenue: round(m.revenue), fees: round(m.fees), profit: round(sliceProfit) };
+      });
       return {
         sku: f.sku,
         productName: nameBySku.get(f.sku) ?? null,
@@ -182,6 +198,7 @@ router.get('/profit', async (req, res, next) => {
         profit: round(profit),
         margin: f.revenue ? round((profit / f.revenue) * 100) : null,
         hasCost: unitCost != null,
+        marketplaces,
       };
     });
 
@@ -212,6 +229,21 @@ router.get('/profit', async (req, res, next) => {
           reimbursements,
           serviceFees,
           operatingProfit,
+        },
+        // US first, then the rest by revenue.
+        byMarketplace: [...byMkt.values()]
+          .sort((a, b) => (a.marketplace === 'US' ? -1 : b.marketplace === 'US' ? 1 : b.revenue - a.revenue))
+          .map((m) => ({
+            ...m,
+            revenue: round(m.revenue),
+            fees: round(m.fees),
+            cost: round(m.cost),
+            profit: round(m.profit),
+            margin: m.revenue ? round((m.profit / m.revenue) * 100) : null,
+          })),
+        currency: {
+          conversions: (result.conversions ?? []).map((c) => ({ ...c, local: round(c.local), usd: round(c.usd), avgRate: Math.round(c.avgRate * 10000) / 10000 })),
+          unconverted: (result.unconverted ?? []).map((u) => ({ ...u, amount: round(u.amount) })),
         },
         account: {
           reimbursements,

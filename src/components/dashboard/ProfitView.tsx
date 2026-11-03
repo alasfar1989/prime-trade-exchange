@@ -4,6 +4,7 @@ import { format, startOfMonth, endOfMonth, subMonths, subDays, isSameDay } from 
 import { openProfitReport } from '../../lib/profitReport';
 import { PerformersGrid } from './PerformersGrid';
 import { AccountSummary } from './AccountSummary';
+import { MarketplaceSplit } from './MarketplaceSplit';
 
 const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
@@ -183,6 +184,9 @@ export function ProfitView() {
         </div>
       )}
 
+      {/* US vs Mexico (etc.), and how foreign currency was converted */}
+      {data?.byMarketplace && data.currency && <MarketplaceSplit byMarketplace={data.byMarketplace} currency={data.currency} />}
+
       {/* Missing-cost warning */}
       {t && t.missingCost > 0 && (
         <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
@@ -226,7 +230,18 @@ export function ProfitView() {
               {rows.map((r) => (
                 <tr key={r.sku} className="border-b border-surface-200 hover:bg-brand-50/30 transition-colors">
                   <td className="px-4 py-3 text-sm text-brand-900 max-w-[240px] truncate">{r.productName || <span className="text-slate-400 italic" title="Sold-out or merchant-fulfilled — no listing name found">{r.sku}</span>}</td>
-                  <td className="px-4 py-3 text-sm font-mono text-slate-500">{r.sku}</td>
+                  <td className="px-4 py-3 text-sm font-mono text-slate-500">
+                    {r.sku}
+                    {r.marketplaces?.filter((m) => m.marketplace !== 'US').map((m) => (
+                      <span
+                        key={m.marketplace}
+                        className="ml-1.5 align-middle text-[10px] font-sans font-semibold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded"
+                        title={`${m.marketplace}: ${m.unitsSold} units · ${money(m.revenue)} revenue · ${money(m.profit)} profit (USD)`}
+                      >
+                        {m.marketplace}
+                      </span>
+                    ))}
+                  </td>
                   <td className="px-4 py-3 text-sm text-brand-900 text-right">
                     {r.unitsSold}
                     {r.unitsRefunded > 0 && <span className="text-xs text-slate-400" title={`${r.unitsRefunded} returned`}> (−{r.unitsRefunded})</span>}

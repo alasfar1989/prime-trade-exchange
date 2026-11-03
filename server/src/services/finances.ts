@@ -1,5 +1,6 @@
 import { spApiGet } from './spApiClient.js';
 import { format } from 'date-fns';
+import { loadRates, rateOn, type RateTable } from './fx.js';
 
 // --- SP-API Finances shapes (only the fields we use) ---
 interface Money { CurrencyAmount?: number; CurrencyCode?: string }
@@ -13,6 +14,7 @@ interface ShipmentItem {
 }
 interface ShipmentEvent {
   AmazonOrderId?: string;
+  MarketplaceName?: string;
   PostedDate?: string;
   ShipmentItemList?: ShipmentItem[];
 }
@@ -30,6 +32,7 @@ interface ShipmentItemAdjustment {
 }
 interface RefundEvent {
   AmazonOrderId?: string;
+  MarketplaceName?: string;
   PostedDate?: string;
   ShipmentItemAdjustmentList?: ShipmentItemAdjustment[];
 }
@@ -41,6 +44,7 @@ interface RefundEvent {
 // composition stays visible rather than hidden behind a single number.
 interface AdjustmentEvent {
   AdjustmentType?: string;
+  PostedDate?: string;
   AdjustmentAmount?: Money;
 }
 // Storage, inbound transport, removals, the monthly Subscription fee. Always
@@ -76,9 +80,36 @@ export interface AccountFinance {
   serviceFeesByType: LineItem[];
 }
 
+/** How foreign-currency money was turned into dollars, so the conversion is visible. */
+export interface CurrencyConversion {
+  currency: string;
+  local: number;   // net signed total in the original currency
+  usd: number;     // the same money in USD
+  avgRate: number; // effective local units per USD
+  count: number;   // amounts converted
+}
+
+/** Money in a currency no rate could be found for — left OUT of every total. */
+export interface UnconvertedAmount {
+  currency: string;
+  amount: number;
+  count: number;
+}
+
 export interface FinancesResult {
   skus: SkuFinance[];
   account: AccountFinance;
+  conversions: CurrencyConversion[];
+  unconverted: UnconvertedAmount[];
+}
+
+/** One marketplace's share of a SKU, already in USD. */
+export interface MarketplaceSlice {
+  unitsSold: number;
+  unitsRefunded: number;
+  revenue: number;
+  refunds: number;
+  fees: number;
 }
 
 export interface SkuFinance {
@@ -90,7 +121,18 @@ export interface SkuFinance {
   refunds: number;        // Principal returned to buyers (negative)
   fees: number;           // shipment fees plus refund fee adjustments (net, signed)
   sampleOrderId?: string; // one order containing this SKU (to resolve its name)
+  /** Same figures split by marketplace code (US, MX, CA, …). All USD. */
+  byMarketplace: Record<string, MarketplaceSlice>;
 }
+
+// Short codes for the marketplaces on a North America unified account.
+const MARKETPLACE_CODES: Record<string, string> = {
+  'Amazon.com': 'US',
+  'Amazon.com.mx': 'MX',
+  'Amazon.ca': 'CA',
+  'Amazon.com.br': 'BR',
+};
+export const marketplaceCode = (name?: string) => (name ? MARKETPLACE_CODES[name] ?? name : 'US');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -113,33 +155,45 @@ async function getPage(params: Record<string, string>): Promise<FinancialEventsR
 }
 
 const blank = (sku: string): SkuFinance => ({
-  sku, unitsSold: 0, unitsRefunded: 0, revenue: 0, grossRevenue: 0, refunds: 0, fees: 0,
+  sku, unitsSold: 0, unitsRefunded: 0, revenue: 0, grossRevenue: 0, refunds: 0, fees: 0, byMarketplace: {},
 });
+
+const blankSlice = (): MarketplaceSlice => ({ unitsSold: 0, unitsRefunded: 0, revenue: 0, refunds: 0, fees: 0 });
+
+// Every currency code that appears anywhere in a page of events.
+function collectCurrencies(o: unknown, into: Set<string>): void {
+  if (Array.isArray(o)) {
+    for (const v of o) collectCurrencies(v, into);
+  } else if (o && typeof o === 'object') {
+    const code = (o as Money).CurrencyCode;
+    if (typeof code === 'string') into.add(code);
+    for (const v of Object.values(o)) collectCurrencies(v, into);
+  }
+}
 
 /**
  * Pull shipment (sale) and refund financial events for the [from, to] range and
- * aggregate NET proceeds + fees per seller SKU.
+ * aggregate NET proceeds + fees per seller SKU, in USD.
  *
  * Refunds are netted off, not reported alongside: a SKU that sold 10 and had 2
  * returned moves 8 units. Because Amazon posts a refund whenever it settles —
  * which can be a later window than the sale — a SKU can finish a window with
  * negative net units. That is correct for the period and is left as-is so the
  * totals foot against Amazon's own settlement.
+ *
+ * Every amount carries its own CurrencyCode and is converted at the rate for
+ * the day it posted. Events are collected first and aggregated after, because
+ * the rates can only be fetched once we know which currencies and days appear.
  */
 export async function fetchFinances(from: Date, to: Date): Promise<FinancesResult> {
   const postedAfter = format(from, "yyyy-MM-dd'T'HH:mm:ss'Z'");
   const postedBefore = format(to, "yyyy-MM-dd'T'HH:mm:ss'Z'");
-  const bySku = new Map<string, SkuFinance>();
-  const adjustments = new Map<string, LineItem>();
-  const serviceFees = new Map<string, LineItem>();
+  const shipments: ShipmentEvent[] = [];
+  const refunds: RefundEvent[] = [];
+  const adjustmentEvents: AdjustmentEvent[] = [];
+  const serviceFeeEvents: ServiceFeeEvent[] = [];
+  const currencies = new Set<string>();
   let nextToken: string | undefined;
-
-  const tally = (m: Map<string, LineItem>, type: string, amount: number) => {
-    const rec = m.get(type) || { type, amount: 0, count: 0 };
-    rec.amount += amount;
-    rec.count += 1;
-    m.set(type, rec);
-  };
 
   do {
     const params: Record<string, string> = nextToken
@@ -147,69 +201,131 @@ export async function fetchFinances(from: Date, to: Date): Promise<FinancesResul
       : { PostedAfter: postedAfter, PostedBefore: postedBefore, MaxResultsPerPage: '100' };
 
     const res = await getPage(params);
-    const events = res.payload?.FinancialEvents?.ShipmentEventList || [];
-
-    for (const ev of events) {
-      for (const item of ev.ShipmentItemList || []) {
-        const sku = item.SellerSKU;
-        if (!sku) continue;
-        const rec = bySku.get(sku) || blank(sku);
-        if (!rec.sampleOrderId && ev.AmazonOrderId) rec.sampleOrderId = ev.AmazonOrderId;
-        rec.unitsSold += item.QuantityShipped || 0;
-        for (const c of item.ItemChargeList || []) {
-          if (c.ChargeType === 'Principal') {
-            const amt = c.ChargeAmount?.CurrencyAmount || 0;
-            rec.revenue += amt;
-            rec.grossRevenue += amt;
-          }
-        }
-        for (const f of item.ItemFeeList || []) {
-          rec.fees += f.FeeAmount?.CurrencyAmount || 0; // already negative
-        }
-        bySku.set(sku, rec);
-      }
-    }
-
-    for (const ev of res.payload?.FinancialEvents?.RefundEventList || []) {
-      for (const item of ev.ShipmentItemAdjustmentList || []) {
-        const sku = item.SellerSKU;
-        if (!sku) continue;
-        const rec = bySku.get(sku) || blank(sku);
-        if (!rec.sampleOrderId && ev.AmazonOrderId) rec.sampleOrderId = ev.AmazonOrderId;
-        // Refunded quantity arrives POSITIVE, so it must be subtracted — adding
-        // it would inflate both units and COGS (the bug that broke the first
-        // spreadsheet build of this same report).
-        const returned = Math.abs(item.QuantityShipped || 0);
-        rec.unitsRefunded += returned;
-        rec.unitsSold -= returned;
-        for (const c of item.ItemChargeAdjustmentList || []) {
-          if (c.ChargeType === 'Principal') {
-            const amt = c.ChargeAmount?.CurrencyAmount || 0; // negative
-            rec.revenue += amt;
-            rec.refunds += amt;
-          }
-        }
-        // Signed on purpose: Commission credits back positive, RefundCommission
-        // is a genuine negative cost. Forcing either sign would corrupt one.
-        for (const f of item.ItemFeeAdjustmentList || []) {
-          rec.fees += f.FeeAmount?.CurrencyAmount || 0;
-        }
-        bySku.set(sku, rec);
-      }
-    }
-
-    for (const ev of res.payload?.FinancialEvents?.AdjustmentEventList || []) {
-      tally(adjustments, ev.AdjustmentType || 'Other', ev.AdjustmentAmount?.CurrencyAmount || 0);
-    }
-    for (const ev of res.payload?.FinancialEvents?.ServiceFeeEventList || []) {
-      for (const f of ev.FeeList || []) {
-        tally(serviceFees, f.FeeType || 'Other', f.FeeAmount?.CurrencyAmount || 0);
-      }
-    }
+    const fe = res.payload?.FinancialEvents;
+    shipments.push(...(fe?.ShipmentEventList || []));
+    refunds.push(...(fe?.RefundEventList || []));
+    adjustmentEvents.push(...(fe?.AdjustmentEventList || []));
+    serviceFeeEvents.push(...(fe?.ServiceFeeEventList || []));
+    collectCurrencies(fe, currencies);
 
     nextToken = res.payload?.NextToken;
     if (nextToken) await sleep(600); // stay under the rate limit between pages
   } while (nextToken);
+
+  const rates = await loadRates([...currencies], from, to);
+  const conversions = new Map<string, CurrencyConversion>();
+  const unconverted = new Map<string, UnconvertedAmount>();
+  // Service fee events carry no PostedDate; price them at the window's last rate.
+  const fallbackDay = format(to, 'yyyy-MM-dd');
+
+  // Money -> USD at the posting day's rate. A currency with no rate is set
+  // aside (and reported) rather than counted 1:1 as dollars.
+  const usd = (m: Money | undefined, postedDate?: string): number => {
+    const amt = m?.CurrencyAmount || 0;
+    const cur = m?.CurrencyCode || 'USD';
+    if (cur === 'USD' || amt === 0) return amt;
+    const table: RateTable | undefined = rates.get(cur);
+    if (!table) {
+      const u = unconverted.get(cur) || { currency: cur, amount: 0, count: 0 };
+      u.amount += amt;
+      u.count += 1;
+      unconverted.set(cur, u);
+      return 0;
+    }
+    const value = amt * rateOn(table, (postedDate || fallbackDay).slice(0, 10));
+    const c = conversions.get(cur) || { currency: cur, local: 0, usd: 0, avgRate: 0, count: 0 };
+    c.local += amt;
+    c.usd += value;
+    c.count += 1;
+    conversions.set(cur, c);
+    return value;
+  };
+
+  const bySku = new Map<string, SkuFinance>();
+  const adjustments = new Map<string, LineItem>();
+  const serviceFees = new Map<string, LineItem>();
+
+  const tally = (m: Map<string, LineItem>, type: string, amount: number) => {
+    const rec = m.get(type) || { type, amount: 0, count: 0 };
+    rec.amount += amount;
+    rec.count += 1;
+    m.set(type, rec);
+  };
+  const recFor = (sku: string, marketplace: string) => {
+    const rec = bySku.get(sku) || blank(sku);
+    bySku.set(sku, rec);
+    const slice = (rec.byMarketplace[marketplace] ||= blankSlice());
+    return { rec, slice };
+  };
+
+  for (const ev of shipments) {
+    const mkt = marketplaceCode(ev.MarketplaceName);
+    for (const item of ev.ShipmentItemList || []) {
+      const sku = item.SellerSKU;
+      if (!sku) continue;
+      const { rec, slice } = recFor(sku, mkt);
+      if (!rec.sampleOrderId && ev.AmazonOrderId) rec.sampleOrderId = ev.AmazonOrderId;
+      const qty = item.QuantityShipped || 0;
+      rec.unitsSold += qty;
+      slice.unitsSold += qty;
+      for (const c of item.ItemChargeList || []) {
+        if (c.ChargeType === 'Principal') {
+          const amt = usd(c.ChargeAmount, ev.PostedDate);
+          rec.revenue += amt;
+          rec.grossRevenue += amt;
+          slice.revenue += amt;
+        }
+      }
+      for (const f of item.ItemFeeList || []) {
+        const amt = usd(f.FeeAmount, ev.PostedDate); // already negative
+        rec.fees += amt;
+        slice.fees += amt;
+      }
+    }
+  }
+
+  for (const ev of refunds) {
+    const mkt = marketplaceCode(ev.MarketplaceName);
+    for (const item of ev.ShipmentItemAdjustmentList || []) {
+      const sku = item.SellerSKU;
+      if (!sku) continue;
+      const { rec, slice } = recFor(sku, mkt);
+      if (!rec.sampleOrderId && ev.AmazonOrderId) rec.sampleOrderId = ev.AmazonOrderId;
+      // Refunded quantity arrives POSITIVE, so it must be subtracted — adding
+      // it would inflate both units and COGS (the bug that broke the first
+      // spreadsheet build of this same report).
+      const returned = Math.abs(item.QuantityShipped || 0);
+      rec.unitsRefunded += returned;
+      rec.unitsSold -= returned;
+      slice.unitsRefunded += returned;
+      slice.unitsSold -= returned;
+      for (const c of item.ItemChargeAdjustmentList || []) {
+        if (c.ChargeType === 'Principal') {
+          const amt = usd(c.ChargeAmount, ev.PostedDate); // negative
+          rec.revenue += amt;
+          rec.refunds += amt;
+          slice.revenue += amt;
+          slice.refunds += amt;
+        }
+      }
+      // Signed on purpose: Commission credits back positive, RefundCommission
+      // is a genuine negative cost. Forcing either sign would corrupt one.
+      for (const f of item.ItemFeeAdjustmentList || []) {
+        const amt = usd(f.FeeAmount, ev.PostedDate);
+        rec.fees += amt;
+        slice.fees += amt;
+      }
+    }
+  }
+
+  for (const ev of adjustmentEvents) {
+    tally(adjustments, ev.AdjustmentType || 'Other', usd(ev.AdjustmentAmount, ev.PostedDate));
+  }
+  for (const ev of serviceFeeEvents) {
+    for (const f of ev.FeeList || []) {
+      tally(serviceFees, f.FeeType || 'Other', usd(f.FeeAmount));
+    }
+  }
 
   // Biggest absolute mover first, so the line that explains the total leads.
   // Zero-value types are dropped: Amazon reports several of them every period
@@ -230,5 +346,7 @@ export async function fetchFinances(from: Date, to: Date): Promise<FinancesResul
       serviceFees: sum(serviceFeesByType),
       serviceFeesByType,
     },
+    conversions: [...conversions.values()].map((c) => ({ ...c, avgRate: c.usd ? c.local / c.usd : 0 })),
+    unconverted: [...unconverted.values()],
   };
 }

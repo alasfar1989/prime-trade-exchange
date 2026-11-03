@@ -15,6 +15,34 @@ export interface ProfitRow {
   profit: number;
   margin: number | null; // percent
   hasCost: boolean;
+  /** The row split by marketplace (US, MX, …); every figure already in USD. */
+  marketplaces: MarketplaceSlice[];
+}
+
+export interface MarketplaceSlice {
+  marketplace: string;
+  unitsSold: number;
+  revenue: number;
+  fees: number;
+  profit: number;
+}
+
+export interface MarketplaceTotal {
+  marketplace: string;
+  unitsSold: number;
+  revenue: number;
+  fees: number;
+  cost: number;
+  profit: number;
+  margin: number | null;
+  skus: number;
+}
+
+export interface CurrencyInfo {
+  /** Foreign money converted to USD (e.g. MXN from Amazon.com.mx). */
+  conversions: { currency: string; local: number; usd: number; avgRate: number; count: number }[];
+  /** Money with no available rate — excluded from every total. */
+  unconverted: { currency: string; amount: number; count: number }[];
 }
 
 export interface ProfitTotals {
@@ -54,6 +82,8 @@ export interface ProfitData {
   rows: ProfitRow[];
   totals: ProfitTotals;
   account: AccountBreakdown;
+  byMarketplace: MarketplaceTotal[];
+  currency: CurrencyInfo;
   range: { from: string; to: string }; // ISO datetimes resolved by the server
 }
 

@@ -96,6 +96,17 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     ? `<div class="note"><strong>${t.missingCost}</strong> of ${t.skuCount} SKUs have no unit cost set — their profit is calculated as if cost were $0, so the total is overstated.</div>`
     : '';
 
+  // Sales outside the US arrive in local currency and are converted to USD
+  // server-side; say so, and split the profit by marketplace.
+  const mkts = data.byMarketplace ?? [];
+  const fx = data.currency?.conversions ?? [];
+  const lost = data.currency?.unconverted ?? [];
+  const marketplaceNote = mkts.some((m) => m.marketplace !== 'US') || fx.length || lost.length
+    ? `<div class="conc">By marketplace (USD): ${mkts.map((m) => `<strong>${esc(m.marketplace)}</strong> ${esc(money(m.profit))} profit on ${esc(money(m.revenue))}`).join(' · ')}.${
+        fx.length ? ` ${fx.map((c) => `${esc(c.local.toLocaleString(undefined, { maximumFractionDigits: 0 }))} ${esc(c.currency)} converted at avg ${c.avgRate.toFixed(2)}/USD`).join('; ')} (daily ECB rates).` : ''
+      }${lost.length ? ` <strong>Excluded, no exchange rate:</strong> ${lost.map((u) => `${esc(u.amount.toLocaleString())} ${esc(u.currency)}`).join(', ')}.` : ''}</div>`
+    : '';
+
   return `<!doctype html><html><head><meta charset="utf-8"><title>Profit Report — ${esc(periodLabel)}</title>
 <style>
   @page { size: letter; margin: 14mm; }
@@ -194,6 +205,7 @@ export function buildProfitReportHtml(data: ProfitData, periodLabel: string, gen
     </div>
 
     ${missingNote}
+    ${marketplaceNote}
 
     ${acct.reimbursementsByType.length || acct.serviceFeesByType.length ? `
     <div class="section-h">Account-level income &amp; costs <span style="font-weight:400;color:${C.slate400};font-size:11px">— not tied to any single sale</span></div>
