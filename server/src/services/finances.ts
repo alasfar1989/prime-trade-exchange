@@ -1,17 +1,25 @@
 import { spApiGet } from './spApiClient.js';
-import { format } from 'date-fns';
 import { loadRates, rateOn, type RateTable } from './fx.js';
 
 // --- SP-API Finances shapes (only the fields we use) ---
 interface Money { CurrencyAmount?: number; CurrencyCode?: string }
 interface ChargeComponent { ChargeType?: string; ChargeAmount?: Money }
 interface FeeComponent { FeeType?: string; FeeAmount?: Money }
+interface Promotion { PromotionType?: string; PromotionAmount?: Money }
 interface ShipmentItem {
   SellerSKU?: string;
   QuantityShipped?: number;
   ItemChargeList?: ChargeComponent[];
   ItemFeeList?: FeeComponent[];
+  PromotionList?: Promotion[];
 }
+
+// Charges that are the seller's money. Shipping and gift-wrap credits count:
+// Amazon bills them back as ShippingChargeback / GiftwrapChargeback FEES, which
+// were already counted, so leaving the credit out under-stated proceeds.
+// Tax, ShippingTax, GiftWrapTax and RegulatoryFee are NOT here: Amazon collects
+// and remits them (ItemTaxWithheldList cancels each one), so they net to zero.
+const REVENUE_CHARGES = new Set(['Principal', 'ShippingCharge', 'GiftWrap', 'Goodwill']);
 interface ShipmentEvent {
   AmazonOrderId?: string;
   MarketplaceName?: string;
@@ -29,6 +37,7 @@ interface ShipmentItemAdjustment {
   QuantityShipped?: number;
   ItemChargeAdjustmentList?: ChargeComponent[];
   ItemFeeAdjustmentList?: FeeComponent[];
+  PromotionAdjustmentList?: Promotion[];
 }
 interface RefundEvent {
   AmazonOrderId?: string;
@@ -116,9 +125,9 @@ export interface SkuFinance {
   sku: string;
   unitsSold: number;      // NET units: shipped minus refunded
   unitsRefunded: number;  // units returned in the window (positive)
-  revenue: number;        // NET revenue: Principal shipped minus Principal refunded
-  grossRevenue: number;   // Principal on shipments only, before refunds
-  refunds: number;        // Principal returned to buyers (negative)
+  revenue: number;        // NET revenue: product + shipping/gift-wrap credits − promotions, minus refunds
+  grossRevenue: number;   // the same on shipments only, before refunds
+  refunds: number;        // money returned to buyers (negative)
   fees: number;           // shipment fees plus refund fee adjustments (net, signed)
   sampleOrderId?: string; // one order containing this SKU (to resolve its name)
   /** Same figures split by marketplace code (US, MX, CA, …). All USD. */
@@ -186,8 +195,11 @@ function collectCurrencies(o: unknown, into: Set<string>): void {
  * the rates can only be fetched once we know which currencies and days appear.
  */
 export async function fetchFinances(from: Date, to: Date): Promise<FinancesResult> {
-  const postedAfter = format(from, "yyyy-MM-dd'T'HH:mm:ss'Z'");
-  const postedBefore = format(to, "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  // toISOString, not date-fns format(): format() renders LOCAL time, so with a
+  // literal 'Z' appended the window silently shifted by the host's UTC offset.
+  const isoSeconds = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const postedAfter = isoSeconds(from);
+  const postedBefore = isoSeconds(to);
   const shipments: ShipmentEvent[] = [];
   const refunds: RefundEvent[] = [];
   const adjustmentEvents: AdjustmentEvent[] = [];
@@ -216,7 +228,7 @@ export async function fetchFinances(from: Date, to: Date): Promise<FinancesResul
   const conversions = new Map<string, CurrencyConversion>();
   const unconverted = new Map<string, UnconvertedAmount>();
   // Service fee events carry no PostedDate; price them at the window's last rate.
-  const fallbackDay = format(to, 'yyyy-MM-dd');
+  const fallbackDay = to.toISOString().slice(0, 10);
 
   // Money -> USD at the posting day's rate. A currency with no rate is set
   // aside (and reported) rather than counted 1:1 as dollars.
@@ -269,12 +281,19 @@ export async function fetchFinances(from: Date, to: Date): Promise<FinancesResul
       rec.unitsSold += qty;
       slice.unitsSold += qty;
       for (const c of item.ItemChargeList || []) {
-        if (c.ChargeType === 'Principal') {
+        if (REVENUE_CHARGES.has(c.ChargeType || '')) {
           const amt = usd(c.ChargeAmount, ev.PostedDate);
           rec.revenue += amt;
           rec.grossRevenue += amt;
           slice.revenue += amt;
         }
+      }
+      // Seller-funded discounts (coupons, Prime deals) arrive negative.
+      for (const p of item.PromotionList || []) {
+        const amt = usd(p.PromotionAmount, ev.PostedDate);
+        rec.revenue += amt;
+        rec.grossRevenue += amt;
+        slice.revenue += amt;
       }
       for (const f of item.ItemFeeList || []) {
         const amt = usd(f.FeeAmount, ev.PostedDate); // already negative
@@ -299,14 +318,20 @@ export async function fetchFinances(from: Date, to: Date): Promise<FinancesResul
       rec.unitsSold -= returned;
       slice.unitsRefunded += returned;
       slice.unitsSold -= returned;
-      for (const c of item.ItemChargeAdjustmentList || []) {
-        if (c.ChargeType === 'Principal') {
-          const amt = usd(c.ChargeAmount, ev.PostedDate); // negative
-          rec.revenue += amt;
-          rec.refunds += amt;
-          slice.revenue += amt;
-          slice.refunds += amt;
-        }
+      // Promotion adjustments come back POSITIVE (the discount is returned
+      // along with the sale), so they shrink the refund — summed signed.
+      const refundParts = [
+        ...(item.ItemChargeAdjustmentList || [])
+          .filter((c) => REVENUE_CHARGES.has(c.ChargeType || ''))
+          .map((c) => c.ChargeAmount),
+        ...(item.PromotionAdjustmentList || []).map((p) => p.PromotionAmount),
+      ];
+      for (const m of refundParts) {
+        const amt = usd(m, ev.PostedDate); // net negative
+        rec.revenue += amt;
+        rec.refunds += amt;
+        slice.revenue += amt;
+        slice.refunds += amt;
       }
       // Signed on purpose: Commission credits back positive, RefundCommission
       // is a genuine negative cost. Forcing either sign would corrupt one.

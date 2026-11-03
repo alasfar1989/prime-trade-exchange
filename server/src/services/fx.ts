@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { format, subDays } from 'date-fns';
 import { cacheGet, cacheSet } from '../cache/memoryCache.js';
 
 // The Finances API returns events for every marketplace on the North America
@@ -33,8 +32,9 @@ export async function loadRates(currencies: string[], from: Date, to: Date): Pro
   const wanted = [...new Set(currencies)].filter((c) => c !== 'USD').sort();
   if (wanted.length === 0) return out;
 
-  const start = format(subDays(from, 7), 'yyyy-MM-dd');
-  const end = format(to, 'yyyy-MM-dd');
+  // UTC days, to match the UTC PostedDate each amount is priced by.
+  const start = new Date(from.getTime() - 7 * 86400_000).toISOString().slice(0, 10);
+  const end = to.toISOString().slice(0, 10);
   const key = `fx:${wanted.join(',')}:${start}:${end}`;
   let rates = cacheGet<Record<string, Record<string, number>>>(key)?.data;
   if (!rates) {
